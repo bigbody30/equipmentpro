@@ -214,21 +214,16 @@ body{font-family:'Kanit','Sarabun',sans-serif;background:#fafafa;color:var(--ig-
     <div class="modal-header"><span class="modal-title">&#x2699;&#xfe0f; จัดการระบบ</span><button class="modal-close" onclick="closeModal('modal-admin')">&#xd7;</button></div>
     <div class="modal-body">
       <div style="display:flex;gap:6px;margin-bottom:16px;overflow-x:auto">
-        <button class="filter-chip active" id="admin-tab-companies" onclick="switchAdminTab('companies',this)">&#x1f3e2; บริษัท</button>
-        <button class="filter-chip" id="admin-tab-warehouses" onclick="switchAdminTab('warehouses',this)">&#x1f3ed; คลัง</button>
+        <button class="filter-chip active" id="admin-tab-warehouses" onclick="switchAdminTab('warehouses',this)">&#x1f3ed; คลัง</button>
         <button class="filter-chip" id="admin-tab-users" onclick="switchAdminTab('users',this)">&#x1f464; ผู้ใช้</button>
       </div>
-      <div id="admin-panel-companies">
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <input type="text" class="form-control" id="new-company-code" placeholder="รหัส เช่น POM" style="flex:1">
-          <input type="text" class="form-control" id="new-company-name" placeholder="ชื่อบริษัท" style="flex:2">
-          <button class="btn btn-gradient btn-sm" onclick="addCompany()">+ เพิ่ม</button>
-        </div>
-        <div id="companies-list"></div>
-      </div>
-      <div id="admin-panel-warehouses" style="display:none">
+      <div id="admin-panel-warehouses">
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-          <select class="form-control" id="new-wh-company" style="flex:1;min-width:120px"></select>
+          <select class="form-control" id="new-wh-company" style="flex:1;min-width:120px">
+            <option value="pom">POM</option>
+            <option value="num">NUM</option>
+            <option value="cvm">CVM</option>
+          </select>
           <input type="text" class="form-control" id="new-wh-code" placeholder="รหัสคลัง" style="flex:1;min-width:100px">
           <input type="text" class="form-control" id="new-wh-name" placeholder="ชื่อคลัง" style="flex:2;min-width:140px">
           <button class="btn btn-gradient btn-sm" onclick="addWarehouse()">+ เพิ่ม</button>
@@ -626,7 +621,8 @@ body{font-family:'Kanit','Sarabun',sans-serif;background:#fafafa;color:var(--ig-
 <script>
 // ===== SUPABASE CONFIG (hardcoded - do not expose to client) =====
 const SB_URL = 'https://wpsmjutxirpyekdgviwp.supabase.co';
-const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indwc21qdXR4aXJweWVrZGd2aXdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNTEzOTQsImV4cCI6MjA5NzgyNzM5NH0.WTaz2_GmXA4sP8XMNAgMys-_xszGU5iNodR8blPX-vM';
+const SB_KEY  = '
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indwc21qdXR4aXJweWVrZGd2aXdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNTEzOTQsImV4cCI6MjA5NzgyNzM5NH0.WTaz2_GmXA4sP8XMNAgMys-_xszGU5iNodR8blPX-vM';
 let sb = null; // supabase client
 
 // ===== LOGIN SYSTEM (Supabase) =====
@@ -672,19 +668,27 @@ async function doLogin(){
   }
 }
 
+// บริษัทคงที่ ไม่ต้องดึงจาก DB
+const FIXED_COMPANIES = [
+  {id:'pom', code:'POM', name:'บริษัท POM'},
+  {id:'num', code:'NUM', name:'บริษัท NUM'},
+  {id:'cvm', code:'CVM', name:'บริษัท CVM'},
+];
+
 async function loadCompaniesAndWarehouses(){
-  const [{data:co},{data:wh}] = await Promise.all([
-    sb.from('companies').select('*').order('code'),
-    sb.from('warehouses').select('*,companies(code,name,color)').order('code'),
-  ]);
-  allCompanies = co||[];
-  allWarehouses = wh||[];
+  allCompanies = FIXED_COMPANIES;
+  const {data:wh} = await sb.from('warehouses').select('*').order('code');
+  // map company_id (stored as 'pom'/'num'/'cvm') to company object
+  allWarehouses = (wh||[]).map(w=>({
+    ...w,
+    companies: FIXED_COMPANIES.find(c=>c.id===w.company_id) || {name:'ไม่ระบุ'}
+  }));
 }
 
 function showWarehouseSelector(list){
   const whs = list || allWarehouses;
   const byCompany = {};
-  whs.forEach(w=>{ const k=w.companies?.name||'ไม่ระบุ'; if(!byCompany[k]) byCompany[k]=[]; byCompany[k].push(w); });
+  whs.forEach(w=>{ const k=w.companies?.name||w.company_id?.toUpperCase()||'ไม่ระบุ'; if(!byCompany[k]) byCompany[k]=[]; byCompany[k].push(w); });
   document.getElementById('wh-cards-container').innerHTML = Object.entries(byCompany).map(([cname,cwhs])=>
     `<div style="width:100%">
       <div style="font-size:11px;font-weight:600;color:var(--ig-muted);letter-spacing:1px;margin:12px 0 6px;padding:0 4px">${cname}</div>
@@ -756,56 +760,27 @@ function doLogout(){
 // ===== ADMIN PANEL =====
 async function openAdmin(){
   await loadCompaniesAndWarehouses();
-  renderCompanies(); renderWarehouseAdmin(); await renderUsers();
-  populateCompanySelect(); renderNewUserWHList();
+  renderWarehouseAdmin(); await renderUsers();
+  renderNewUserWHList();
   openModal('modal-admin');
 }
 
 function switchAdminTab(tab,btn){
-  ['companies','warehouses','users'].forEach(t=>{
+  ['warehouses','users'].forEach(t=>{
     document.getElementById('admin-panel-'+t).style.display=t===tab?'':'none';
     document.getElementById('admin-tab-'+t).classList.toggle('active',t===tab);
   });
-  if(tab==='warehouses') populateCompanySelect();
   if(tab==='users') renderNewUserWHList();
 }
 
-function renderCompanies(){
-  document.getElementById('companies-list').innerHTML = allCompanies.length
-    ? allCompanies.map(c=>`<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--ig-border);border-radius:10px;margin-bottom:8px">
-        <span style="font-size:22px">&#x1f3e2;</span>
-        <div style="flex:1"><div style="font-weight:600">${c.name}</div><div style="font-size:12px;color:var(--ig-muted)">${c.code}</div></div>
-        <button onclick="deleteCompany('${c.id}','${c.name}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer">ลบ</button>
-      </div>`).join('')
-    : `<p style="color:var(--ig-muted);text-align:center">ยังไม่มีบริษัท</p>`;
-}
 
-async function addCompany(){
-  const code=document.getElementById('new-company-code').value.trim().toUpperCase();
-  const name=document.getElementById('new-company-name').value.trim();
-  if(!code||!name){ toast('กรอกรหัสและชื่อบริษัท','error'); return; }
-  const {error}=await sb.from('companies').insert({code,name});
-  if(error){ toast(thaiError(error),'error'); return; }
-  document.getElementById('new-company-code').value=''; document.getElementById('new-company-name').value='';
-  await loadCompaniesAndWarehouses(); renderCompanies();
-  toast('เพิ่มบริษัท '+name+' แล้ว','success');
-}
 
-async function deleteCompany(id,name){
-  if(!confirm('ลบบริษัท "'+name+'" ?')) return;
-  await sb.from('companies').delete().eq('id',id);
-  await loadCompaniesAndWarehouses(); renderCompanies(); renderWarehouseAdmin();
-  toast('ลบแล้ว','success');
-}
 
-function populateCompanySelect(){
-  const sel=document.getElementById('new-wh-company');
-  if(sel) sel.innerHTML=allCompanies.map(c=>`<option value="${c.id}">${c.name} (${c.code})</option>`).join('');
-}
+function populateCompanySelect(){ /* fixed companies */ }
 
 function renderWarehouseAdmin(){
   const byCompany={};
-  allWarehouses.forEach(w=>{ const k=w.companies?.name||'ไม่ระบุ'; if(!byCompany[k]) byCompany[k]=[]; byCompany[k].push(w); });
+  allWarehouses.forEach(w=>{ const k=w.companies?.name||w.company_id?.toUpperCase()||'ไม่ระบุ'; if(!byCompany[k]) byCompany[k]=[]; byCompany[k].push(w); });
   const el=document.getElementById('warehouses-list');
   if(!el) return;
   el.innerHTML = Object.keys(byCompany).length
@@ -822,7 +797,7 @@ function renderWarehouseAdmin(){
 }
 
 async function addWarehouse(){
-  const company_id=document.getElementById('new-wh-company').value;
+  const company_id=document.getElementById('new-wh-company').value; // 'pom'/'num'/'cvm'
   const code=document.getElementById('new-wh-code').value.trim().toUpperCase();
   const name=document.getElementById('new-wh-name').value.trim();
   if(!company_id||!code||!name){ toast('กรอกข้อมูลให้ครบ','error'); return; }
