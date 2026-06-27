@@ -621,8 +621,7 @@ body{font-family:'Kanit','Sarabun',sans-serif;background:#fafafa;color:var(--ig-
 <script>
 // ===== SUPABASE CONFIG (hardcoded - do not expose to client) =====
 const SB_URL = 'https://wpsmjutxirpyekdgviwp.supabase.co';
-const SB_KEY  = '
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indwc21qdXR4aXJweWVrZGd2aXdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNTEzOTQsImV4cCI6MjA5NzgyNzM5NH0.WTaz2_GmXA4sP8XMNAgMys-_xszGU5iNodR8blPX-vM';
+const SB_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indwc21qdXR4aXJweWVrZGd2aXdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIyNTEzOTQsImV4cCI6MjA5NzgyNzM5NH0.WTaz2_GmXA4sP8XMNAgMys-_xszGU5iNodR8blPX-vM';
 let sb = null; // supabase client
 
 // ===== LOGIN SYSTEM (Supabase) =====
@@ -639,32 +638,40 @@ async function doLogin(){
   const u = document.getElementById('login-user').value.trim().toLowerCase();
   const p = document.getElementById('login-pass').value;
   const err = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
   err.style.display='none';
   if(!u||!p){ err.textContent='กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'; err.style.display='block'; return; }
-  if(!sb) sb = window.supabase.createClient(SB_URL, SB_KEY);
-  const {data,error} = await sb.from('app_users').select('*').eq('username',u).eq('password',p).single();
-  if(error||!data){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
-  currentUser = data;
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('login-screen').classList.add('hidden');
-  await loadCompaniesAndWarehouses();
-  if(currentUser.role==='superuser'){
-    document.getElementById('btn-admin').style.display='';
-    document.getElementById('btn-switch-wh').style.display='';
-    showWarehouseSelector();
-  } else {
-    document.getElementById('btn-admin').style.display='none';
-    document.getElementById('btn-switch-wh').style.display='none';
-    const {data:uwData} = await sb.from('user_warehouses').select('warehouse_id').eq('user_id',currentUser.id);
-    const whIds = (uwData||[]).map(r=>r.warehouse_id);
-    const myWH = allWarehouses.filter(w=>whIds.includes(w.id));
-    if(!myWH.length){
-      err.textContent='ไม่มีสิทธิ์เข้าถึงคลังใด ติดต่อ Admin'; err.style.display='block';
-      document.getElementById('login-screen').classList.remove('hidden');
-      document.getElementById('login-screen').style.display=''; return;
+  btn.textContent='กำลังเข้าสู่ระบบ...'; btn.disabled=true;
+  try {
+    if(!sb) sb = window.supabase.createClient(SB_URL, SB_KEY);
+    const {data,error} = await sb.from('app_users').select('*').eq('username',u).eq('password',p).single();
+    if(error||!data){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
+    currentUser = data;
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('login-screen').classList.add('hidden');
+    await loadCompaniesAndWarehouses();
+    if(currentUser.role==='superuser'){
+      document.getElementById('btn-admin').style.display='';
+      document.getElementById('btn-switch-wh').style.display='';
+      showWarehouseSelector();
+    } else {
+      document.getElementById('btn-admin').style.display='none';
+      document.getElementById('btn-switch-wh').style.display='none';
+      const {data:uwData} = await sb.from('user_warehouses').select('warehouse_id').eq('user_id',currentUser.id);
+      const whIds = (uwData||[]).map(r=>r.warehouse_id);
+      const myWH = allWarehouses.filter(w=>whIds.includes(w.id));
+      if(!myWH.length){
+        err.textContent='ไม่มีสิทธิ์เข้าถึงคลังใด ติดต่อ Admin'; err.style.display='block';
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('login-screen').style.display=''; return;
+      }
+      if(myWH.length===1) selectWarehouseObj(myWH[0]);
+      else showWarehouseSelector(myWH);
     }
-    if(myWH.length===1) selectWarehouseObj(myWH[0]);
-    else showWarehouseSelector(myWH);
+  } catch(e) {
+    err.textContent = 'เชื่อมต่อไม่ได้: ' + (e.message||e); err.style.display='block';
+  } finally {
+    btn.textContent='เข้าสู่ระบบ'; btn.disabled=false;
   }
 }
 
