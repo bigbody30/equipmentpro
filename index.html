@@ -247,6 +247,10 @@ body{font-family:'Kanit','Sarabun',sans-serif;background:#fafafa;color:var(--ig-
           <div id="new-user-wh-list" style="margin-top:6px;width:100%"></div>
           <button class="btn btn-gradient btn-block" style="margin-top:10px" onclick="addUser()">+ เพิ่มผู้ใช้</button>
         </div>
+        <div style="position:relative;margin-bottom:10px">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--ig-muted);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="form-control" id="user-search" placeholder="ค้นหาผู้ใช้..." style="padding-left:34px;font-size:13px" oninput="filterUsers()">
+        </div>
         <div id="users-list"></div>
       </div>
     </div>
@@ -869,85 +873,150 @@ async function deleteWarehouse(id,name){
 }
 
 let allUsers=[];
+let allUsersUWMap = {};
+
 async function renderUsers(){
   const {data}=await sb.from('app_users').select('*').order('username');
   allUsers=data||[];
   const {data:uwData}=await sb.from('user_warehouses').select('user_id,warehouse_id,warehouses(id,name,code)');
-  const uwMap={};
-  (uwData||[]).forEach(r=>{ if(!uwMap[r.user_id]) uwMap[r.user_id]=[]; uwMap[r.user_id].push(r.warehouses); });
+  allUsersUWMap={};
+  (uwData||[]).forEach(r=>{ if(!allUsersUWMap[r.user_id]) allUsersUWMap[r.user_id]=[]; allUsersUWMap[r.user_id].push(r.warehouses); });
+  filterUsers();
+}
+
+function filterUsers(){
+  const q=(document.getElementById('user-search')?.value||'').toLowerCase();
+  const filtered = q ? allUsers.filter(u=>(u.username+u.display_name).toLowerCase().includes(q)) : allUsers;
   const el=document.getElementById('users-list');
   if(!el) return;
-  el.innerHTML = allUsers.map(u=>`
-    <div style="padding:12px;border:1px solid var(--ig-border);border-radius:10px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <span style="font-size:20px">${u.role==='superuser'?'&#x1f451;':'&#x1f464;'}</span>
-        <div style="flex:1">
-          <div style="font-weight:600">${u.display_name||u.username} <span style="font-size:11px;color:var(--ig-muted)">(${u.username})</span></div>
-          <div style="font-size:11px;color:${u.role==='superuser'?'#7c3aed':'#2563eb'};font-weight:600">${u.role==='superuser'?'SuperUser':'User'}</div>
-        </div>
-        <button onclick="deleteUser('${u.id}','${u.username}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer">ลบ</button>
+  el.innerHTML = filtered.map(u=>renderUserCard(u, allUsersUWMap[u.id]||[])).join('')
+    || `<p style="color:var(--ig-muted);text-align:center">${q?'ไม่พบผู้ใช้':'ยังไม่มีผู้ใช้'}</p>`;
+}
+
+function renderUserCard(u, whs){
+  return `<div style="padding:12px;border:1px solid var(--ig-border);border-radius:10px;margin-bottom:8px" id="ucard-${u.id}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span style="font-size:20px">${u.role==='superuser'?'&#x1f451;':'&#x1f464;'}</span>
+      <div style="flex:1">
+        <div style="font-weight:600">${u.display_name||u.username} <span style="font-size:11px;color:var(--ig-muted)">(${u.username})</span></div>
+        <div style="font-size:11px;color:${u.role==='superuser'?'#7c3aed':'#2563eb'};font-weight:600">${u.role==='superuser'?'SuperUser':'User'}</div>
       </div>
-      ${u.role!=='superuser'?`
-        <div style="font-size:12px;color:var(--ig-muted);margin-bottom:4px">สิทธิ์คลัง:</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px">
-          ${(uwMap[u.id]||[]).map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${w.name} <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||`<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>`}
-        </div>
+      <button onclick="openEditUser('${u.id}')" style="background:#eff6ff;color:#2563eb;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">แก้ไข</button>
+      <button onclick="deleteUser('${u.id}','${u.username}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">ลบ</button>
+    </div>
+    ${u.role!=='superuser'?`
+      <div style="font-size:12px;color:var(--ig-muted);margin-bottom:4px">สิทธิ์คลัง:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px">
+        ${whs.map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${w.name} <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||'<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>'}
+      </div>
+      <div id="edit-wh-${u.id}" style="display:none;margin-top:8px">
         <select onchange="grantWH('${u.id}',this.value,this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--ig-border);border-radius:6px;width:100%">
           <option value="">+ เพิ่มสิทธิ์คลัง...</option>
           ${allWarehouses.map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('')}
-        </select>`
-      :`<div style="font-size:12px;color:#7c3aed">เข้าถึงได้ทุกคลัง</div>`}
-    </div>`).join('')||`<p style="color:var(--ig-muted);text-align:center">ยังไม่มีผู้ใช้</p>`;
+        </select>
+        <div style="display:flex;gap:8px;margin-top:6px">
+          <input type="password" id="edit-pass-${u.id}" class="form-control" placeholder="เปลี่ยนรหัสผ่าน (ว่าง=ไม่เปลี่ยน)" style="font-size:12px;flex:1">
+          <button onclick="saveEditUser('${u.id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px">บันทึก</button>
+        </div>
+      </div>`
+    :`<div style="font-size:12px;color:#7c3aed">เข้าถึงได้ทุกคลัง</div>`}
+  </div>`;
+}
+
+function openEditUser(uid){
+  const el=document.getElementById('edit-wh-'+uid);
+  if(!el) return;
+  el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
+
+async function saveEditUser(uid){
+  const passEl=document.getElementById('edit-pass-'+uid);
+  const newPass=passEl?.value?.trim();
+  if(newPass){
+    const {error}=await sb.from('app_users').update({password:newPass}).eq('id',uid);
+    if(error){ toast(thaiError(error),'error'); return; }
+    passEl.value='';
+    toast('เปลี่ยนรหัสผ่านแล้ว','success');
+  }
+  document.getElementById('edit-wh-'+uid).style.display='none';
+  await renderUsers();
 }
 
 function renderNewUserWHList(){
   const el=document.getElementById('new-user-wh-list');
   if(!el) return;
-  const COMPANIES = [
-    {id:'pom', name:'POM'}, {id:'num', name:'NUM'}, {id:'cvm', name:'CVM'}
-  ];
+  const COMPANIES = [{id:'pom',name:'POM'},{id:'num',name:'NUM'},{id:'cvm',name:'CVM'}];
   const byCompany = {};
   allWarehouses.forEach(w=>{
-    const cid = w.company_id?.toLowerCase()||'other';
+    const cid=w.company_id?.toLowerCase()||'other';
     if(!byCompany[cid]) byCompany[cid]=[];
     byCompany[cid].push(w);
   });
-  el.innerHTML = COMPANIES.filter(c=>byCompany[c.id]).map(c=>`
-    <div style="margin-bottom:8px;border:1px solid var(--ig-border);border-radius:10px;overflow:hidden">
-      <div style="padding:10px 12px;background:#f8f8f8;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleWHDropdown('${c.id}')">
-        <span style="font-weight:600;font-size:13px">🏢 ${c.name}</span>
-        <span id="wh-arrow-${c.id}" style="color:var(--ig-muted);transition:transform .2s">▼</span>
+  // store selected warehouse ids
+  window._selectedWH = window._selectedWH || new Set();
+
+  el.innerHTML = `<div id="wh-selected-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>` +
+    COMPANIES.filter(c=>byCompany[c.id]).map(c=>`
+    <div style="margin-bottom:6px;border:1px solid var(--ig-border);border-radius:10px;overflow:hidden">
+      <div style="padding:9px 12px;background:#f8f8f8;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:600;font-size:13px" onclick="toggleWHDropdown('${c.id}')">
+        <span>🏢 ${c.name}</span>
+        <span id="wh-arrow-${c.id}">▼</span>
       </div>
-      <div id="wh-drop-${c.id}" style="display:none;padding:8px 12px;display:flex;flex-direction:column;gap:6px">
+      <div id="wh-drop-${c.id}" style="padding:6px 8px;display:flex;flex-direction:column;gap:4px">
         ${(byCompany[c.id]||[]).map(w=>`
-          <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;background:#fff;border:1px solid var(--ig-border)">
-            <input type="checkbox" class="wh-cb-${c.id}" value="${w.id}" style="accent-color:#7c3aed;width:16px;height:16px">
-            <span>🏭 ${w.name} <span style="color:var(--ig-muted);font-size:11px">(${w.code})</span></span>
-          </label>`).join('')}
-        <label style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:12px;color:#7c3aed">
-          <input type="checkbox" onchange="toggleCompanyWH('${c.id}',this.checked)" style="accent-color:#7c3aed">
-          เลือกทั้งหมดใน ${c.name}
-        </label>
+          <div onclick="toggleWHSelect('${w.id}','${w.name}','${w.code}')" id="wh-item-${w.id}"
+            style="padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13px;border:1px solid var(--ig-border);background:#fff;display:flex;align-items:center;gap:8px;transition:all .15s">
+            <span style="font-size:16px">🏭</span>
+            <span style="flex:1">${w.name} <span style="color:var(--ig-muted);font-size:11px">(${w.code})</span></span>
+            <span id="wh-check-${w.id}" style="color:#7c3aed;display:none;font-weight:700">✓</span>
+          </div>`).join('')}
       </div>
     </div>`).join('');
 
-  // เปิดทุก dropdown เริ่มต้น
-  COMPANIES.filter(c=>byCompany[c.id]).forEach(c=>{
-    const d=document.getElementById('wh-drop-'+c.id);
-    if(d) d.style.display='flex';
-  });
+  window._selectedWH = new Set();
+  updateWHPreview();
+}
+
+function toggleWHSelect(whId, whName, whCode){
+  if(!window._selectedWH) window._selectedWH = new Set();
+  const el = document.getElementById('wh-item-'+whId);
+  const chk = document.getElementById('wh-check-'+whId);
+  if(window._selectedWH.has(whId)){
+    window._selectedWH.delete(whId);
+    el.style.background='#fff'; el.style.borderColor='var(--ig-border)';
+    if(chk) chk.style.display='none';
+  } else {
+    window._selectedWH.add(whId);
+    el.style.background='#f5f3ff'; el.style.borderColor='#7c3aed';
+    if(chk) chk.style.display='';
+  }
+  updateWHPreview();
+}
+
+function updateWHPreview(){
+  const prev = document.getElementById('wh-selected-preview');
+  if(!prev) return;
+  if(!window._selectedWH||window._selectedWH.size===0){
+    prev.innerHTML='<span style="color:var(--ig-muted);font-size:12px">ยังไม่ได้เลือกคลัง</span>';
+    return;
+  }
+  prev.innerHTML=[...window._selectedWH].map(id=>{
+    const w=allWarehouses.find(x=>x.id===id);
+    return w?`<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px">🏭 ${w.name}</span>`:'';
+  }).join('');
 }
 
 function toggleWHDropdown(cid){
   const d=document.getElementById('wh-drop-'+cid);
   const a=document.getElementById('wh-arrow-'+cid);
   if(!d) return;
-  const isOpen = d.style.display!=='none';
-  d.style.display = isOpen ? 'none' : 'flex';
-  if(a) a.style.transform = isOpen ? '' : 'rotate(180deg)';
+  const isOpen=d.style.display!=='none';
+  d.style.display=isOpen?'none':'flex';
+  d.style.flexDirection='column';
+  if(a) a.style.transform=isOpen?'':'rotate(180deg)';
 }
 
-function toggleCompanyWH(cid, checked){
+function toggleCompanyWH(cid,checked){
   document.querySelectorAll(`.wh-cb-${cid}`).forEach(cb=>cb.checked=checked);
 }
 
@@ -960,13 +1029,13 @@ async function addUser(){
   const {data:nu,error}=await sb.from('app_users').insert({username,password:pass,display_name:display||username,role}).select().single();
   if(error){ toast(thaiError(error),'error'); return; }
   if(role!=='superuser'){
-    const checked=[...document.querySelectorAll('#new-user-wh-list input:checked')].map(c=>c.value);
+    const checked = [...(window._selectedWH||new Set())];
     if(checked.length) await sb.from('user_warehouses').insert(checked.map(wid=>({user_id:nu.id,warehouse_id:wid})));
   }
   document.getElementById('new-user-username').value='';
   document.getElementById('new-user-display').value='';
   document.getElementById('new-user-pass').value='';
-  document.querySelectorAll('#new-user-wh-list input').forEach(c=>c.checked=false);
+  window._selectedWH = new Set();
   await renderUsers();
   toast('เพิ่มผู้ใช้ '+username+' แล้ว','success');
 }
