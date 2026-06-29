@@ -912,21 +912,39 @@ function renderNewUserWHList(){
     if(!byCompany[cid]) byCompany[cid]=[];
     byCompany[cid].push(w);
   });
-  el.innerHTML = '<div style="width:100%">' + COMPANIES.filter(c=>byCompany[c.id]).map(c=>`
-    <div style="margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;color:var(--ig-muted);margin-bottom:6px;letter-spacing:0.5px">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+  el.innerHTML = COMPANIES.filter(c=>byCompany[c.id]).map(c=>`
+    <div style="margin-bottom:8px;border:1px solid var(--ig-border);border-radius:10px;overflow:hidden">
+      <div style="padding:10px 12px;background:#f8f8f8;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleWHDropdown('${c.id}')">
+        <span style="font-weight:600;font-size:13px">🏢 ${c.name}</span>
+        <span id="wh-arrow-${c.id}" style="color:var(--ig-muted);transition:transform .2s">▼</span>
+      </div>
+      <div id="wh-drop-${c.id}" style="display:none;padding:8px 12px;display:flex;flex-direction:column;gap:6px">
+        ${(byCompany[c.id]||[]).map(w=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;background:#fff;border:1px solid var(--ig-border)">
+            <input type="checkbox" class="wh-cb-${c.id}" value="${w.id}" style="accent-color:#7c3aed;width:16px;height:16px">
+            <span>🏭 ${w.name} <span style="color:var(--ig-muted);font-size:11px">(${w.code})</span></span>
+          </label>`).join('')}
+        <label style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:12px;color:#7c3aed">
           <input type="checkbox" onchange="toggleCompanyWH('${c.id}',this.checked)" style="accent-color:#7c3aed">
-          &#x1f3e2; ${c.name}
+          เลือกทั้งหมดใน ${c.name}
         </label>
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;padding-left:20px">
-        ${(byCompany[c.id]||[]).map(w=>`
-          <label class="wh-cb-label-${c.id}" style="display:flex;align-items:center;gap:6px;background:#f5f5f5;padding:4px 10px;border-radius:8px;cursor:pointer;font-size:13px">
-            <input type="checkbox" class="wh-cb-${c.id}" value="${w.id}" style="accent-color:#7c3aed"> ${w.name} (${w.code})
-          </label>`).join('')}
-      </div>
-    </div>`).join('') + '</div>';
+    </div>`).join('');
+
+  // เปิดทุก dropdown เริ่มต้น
+  COMPANIES.filter(c=>byCompany[c.id]).forEach(c=>{
+    const d=document.getElementById('wh-drop-'+c.id);
+    if(d) d.style.display='flex';
+  });
+}
+
+function toggleWHDropdown(cid){
+  const d=document.getElementById('wh-drop-'+cid);
+  const a=document.getElementById('wh-arrow-'+cid);
+  if(!d) return;
+  const isOpen = d.style.display!=='none';
+  d.style.display = isOpen ? 'none' : 'flex';
+  if(a) a.style.transform = isOpen ? '' : 'rotate(180deg)';
 }
 
 function toggleCompanyWH(cid, checked){
