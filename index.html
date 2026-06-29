@@ -837,20 +837,46 @@ function populateCompanySelect(){ /* fixed companies */ }
 
 function renderWarehouseAdmin(){
   const byCompany={};
-  allWarehouses.forEach(w=>{ const k=w.companies?.name||w.company_id?.toUpperCase()||'ไม่ระบุ'; if(!byCompany[k]) byCompany[k]=[]; byCompany[k].push(w); });
+  allWarehouses.forEach(w=>{ const k=w.company_id?.toUpperCase()||'ไม่ระบุ'; if(!byCompany[k]) byCompany[k]=[]; byCompany[k].push(w); });
   const el=document.getElementById('warehouses-list');
   if(!el) return;
   el.innerHTML = Object.keys(byCompany).length
-    ? Object.entries(byCompany).map(([cname,whs])=>`
+    ? Object.entries(byCompany).sort().map(([cname,whs])=>`
         <div style="margin-bottom:12px">
-          <div style="font-size:11px;font-weight:700;color:var(--ig-muted);margin-bottom:6px">${cname}</div>
-          ${whs.map(w=>`<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--ig-border);border-radius:10px;margin-bottom:6px">
-            <span>&#x1f3ed;</span>
-            <div style="flex:1"><div style="font-weight:500">${w.name}</div><div style="font-size:12px;color:var(--ig-muted)">${w.code}</div></div>
-            <button onclick="deleteWarehouse('${w.id}','${w.name}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer">ลบ</button>
+          <div style="font-size:11px;font-weight:700;color:var(--ig-muted);margin-bottom:6px">บริษัท ${cname}</div>
+          ${whs.map(w=>`
+          <div style="border:1px solid var(--ig-border);border-radius:10px;margin-bottom:6px;overflow:hidden">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px">
+              <span>&#x1f3ed;</span>
+              <div style="flex:1"><div style="font-weight:500">${w.name}</div><div style="font-size:12px;color:var(--ig-muted)">${w.code}</div></div>
+              <button onclick="toggleEditWH('${w.id}')" style="background:#eff6ff;color:#2563eb;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">แก้ไข</button>
+              <button onclick="deleteWarehouse('${w.id}','${w.name}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">ลบ</button>
+            </div>
+            <div id="edit-wh-panel-${w.id}" style="display:none;padding:8px 12px;background:#f9f9f9;border-top:1px solid var(--ig-border)">
+              <div style="display:flex;gap:8px">
+                <input type="text" id="edit-wh-name-${w.id}" class="form-control" value="${w.name}" placeholder="ชื่อคลัง" style="flex:2;font-size:13px">
+                <input type="text" id="edit-wh-code-${w.id}" class="form-control" value="${w.code}" placeholder="รหัสคลัง" style="flex:1;font-size:13px">
+                <button onclick="saveWarehouse('${w.id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 14px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">บันทึก</button>
+              </div>
+            </div>
           </div>`).join('')}
         </div>`).join('')
     : `<p style="color:var(--ig-muted);text-align:center">ยังไม่มีคลัง</p>`;
+}
+
+function toggleEditWH(id){
+  const el=document.getElementById('edit-wh-panel-'+id);
+  if(el) el.style.display=el.style.display==='none'?'block':'none';
+}
+
+async function saveWarehouse(id){
+  const name=document.getElementById('edit-wh-name-'+id)?.value.trim();
+  const code=document.getElementById('edit-wh-code-'+id)?.value.trim().toUpperCase();
+  if(!name||!code){ toast('กรอกชื่อและรหัสคลัง','error'); return; }
+  const {error}=await sb.from('warehouses').update({name,code}).eq('id',id);
+  if(error){ toast(thaiError(error),'error'); return; }
+  await loadCompaniesAndWarehouses(); renderWarehouseAdmin(); renderNewUserWHList();
+  toast('แก้ไขคลังแล้ว','success');
 }
 
 async function addWarehouse(){
