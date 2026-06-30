@@ -662,11 +662,15 @@ async function doLogin(){
     } else {
       document.getElementById('btn-admin').style.display='none';
       document.getElementById('btn-switch-wh').style.display='none';
-      const {data:uwData} = await sb.from('user_warehouses').select('warehouse_id').eq('user_id',currentUser.id);
+      const {data:uwData, error:uwErr} = await sb.from('user_warehouses').select('warehouse_id').eq('user_id',currentUser.id);
+      if(uwErr){ err.textContent='โหลดสิทธิ์คลังไม่สำเร็จ: '+uwErr.message; err.style.display='block';
+        document.getElementById('login-screen').classList.remove('hidden');
+        document.getElementById('login-screen').style.display=''; return; }
       const whIds = (uwData||[]).map(r=>r.warehouse_id);
       const myWH = allWarehouses.filter(w=>whIds.includes(w.id));
       if(!myWH.length){
-        err.textContent='ไม่มีสิทธิ์เข้าถึงคลังใด ติดต่อ Admin'; err.style.display='block';
+        err.textContent='ไม่มีสิทธิ์เข้าถึงคลังใด ('+whIds.length+' รายการสิทธิ์, '+allWarehouses.length+' คลังทั้งหมด) ติดต่อ Admin';
+        err.style.display='block';
         document.getElementById('login-screen').classList.remove('hidden');
         document.getElementById('login-screen').style.display=''; return;
       }
@@ -961,7 +965,10 @@ function renderUserCard(u, whs){
       <div id="edit-wh-${u.id}" style="display:none;margin-top:8px">
         <select onchange="grantWH('${u.id}',this.value,this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--ig-border);border-radius:6px;width:100%">
           <option value="">+ เพิ่มสิทธิ์คลัง...</option>
-          ${allWarehouses.map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('')}
+          ${['pom','num','cvm'].filter(cid=>allWarehouses.some(w=>w.company_id?.toLowerCase()===cid)).map(cid=>`
+            <optgroup label="บริษัท ${cid.toUpperCase()}">
+              ${allWarehouses.filter(w=>w.company_id?.toLowerCase()===cid).map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('')}
+            </optgroup>`).join('')}
         </select>
         <div style="display:flex;gap:8px;margin-top:6px">
           <input type="password" id="edit-pass-${u.id}" class="form-control" placeholder="เปลี่ยนรหัสผ่าน (ว่าง=ไม่เปลี่ยน)" style="font-size:12px;flex:1">
@@ -1058,7 +1065,11 @@ async function addUser(){
 
 async function grantWH(userId,whId,sel){
   if(!whId) return;
-  await sb.from('user_warehouses').upsert({user_id:userId,warehouse_id:whId});
+  const {error} = await sb.from('user_warehouses').upsert(
+    {user_id:userId,warehouse_id:whId},
+    {onConflict:'user_id,warehouse_id'}
+  );
+  if(error){ toast(thaiError(error),'error'); return; }
   sel.value=''; await renderUsers();
   toast('เพิ่มสิทธิ์คลังแล้ว','success');
 }
