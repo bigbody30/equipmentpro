@@ -668,6 +668,7 @@ async function doLogin(){
         document.getElementById('login-screen').style.display=''; return; }
       const whIds = (uwData||[]).map(r=>r.warehouse_id);
       const myWH = allWarehouses.filter(w=>whIds.includes(w.id));
+      console.log('DEBUG login: whIds=', whIds, 'allWarehouses=', allWarehouses.map(w=>({id:w.id,name:w.name})), 'myWH=', myWH);
       if(!myWH.length){
         err.textContent='ไม่มีสิทธิ์เข้าถึงคลังใด ('+whIds.length+' รายการสิทธิ์, '+allWarehouses.length+' คลังทั้งหมด) ติดต่อ Admin';
         err.style.display='block';
@@ -786,7 +787,7 @@ async function selectWarehouseObj(elOrObj){
   if(_whSelecting) return; _whSelecting=true; setTimeout(()=>{ _whSelecting=false; },1500);
   currentWarehouse = wh.code;
   const badge = document.getElementById('topbar-dept-badge');
-  badge.textContent='&#x1f3ed; '+wh.name; badge.style.display='inline-flex';
+  badge.textContent='🏭 '+wh.name; badge.style.display='inline-flex';
   badge.style.background='#f5f3ff'; badge.style.color='#7c3aed';
   document.getElementById('warehouse-screen').classList.add('hidden');
   document.getElementById('warehouse-screen').style.display='none';
@@ -794,7 +795,14 @@ async function selectWarehouseObj(elOrObj){
   document.getElementById('receive-date').value=today();
   equipments=[]; issueTransactions=[]; receiveTransactions=[];
   showSkeleton();
-  try{ await loadAll(); setConn(true); }catch(e){ toast(thaiError(e),'error'); }
+  try{
+    await loadAll();
+    setConn(true);
+  } catch(e){
+    setConn(false);
+    toast('โหลดข้อมูลคลังไม่สำเร็จ: '+(e.message||JSON.stringify(e)),'error');
+    console.error('selectWarehouseObj loadAll error', e);
+  }
 }
 
 async function selectWarehouse(code){
@@ -931,7 +939,7 @@ let allUsersUWMap = {};
 async function renderUsers(){
   const {data}=await sb.from('app_users').select('*').order('username');
   allUsers=data||[];
-  const {data:uwData}=await sb.from('user_warehouses').select('user_id,warehouse_id,warehouses(id,name,code)');
+  const {data:uwData}=await sb.from('user_warehouses').select('user_id,warehouse_id,warehouses(id,name,code,company_id)');
   allUsersUWMap={};
   (uwData||[]).forEach(r=>{ if(!allUsersUWMap[r.user_id]) allUsersUWMap[r.user_id]=[]; allUsersUWMap[r.user_id].push(r.warehouses); });
   filterUsers();
@@ -960,7 +968,7 @@ function renderUserCard(u, whs){
     ${u.role!=='superuser'?`
       <div style="font-size:12px;color:var(--ig-muted);margin-bottom:4px">สิทธิ์คลัง:</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px">
-        ${whs.map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${w.name} <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||'<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>'}
+        ${whs.map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${w.name} <span style="opacity:0.6;font-size:10px">[${(w.company_id||'').toUpperCase()}]</span> <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||'<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>'}
       </div>
       <div id="edit-wh-${u.id}" style="display:none;margin-top:8px">
         <div style="display:flex;gap:8px;margin-bottom:6px">
@@ -1182,6 +1190,8 @@ async function loadAll(){
     sb.from('receiving_documents').select('id,doc_number,date,note,receiving_items(id,quantity,materials(code,name,unit))').eq('warehouse_id', currentWarehouse).order('created_at', {ascending:false}),
   ]);
   if(eqRes.error) throw eqRes.error;
+  if(issRes.error) throw issRes.error;
+  if(recRes.error) throw recRes.error;
   equipments = (eqRes.data||[]).map(r=>{
     const cached = getCachedImg(r.id);
     if(r.image_url && r.image_url !== cached) setCachedImg(r.id, r.image_url);
