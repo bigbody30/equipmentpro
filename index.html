@@ -978,72 +978,37 @@ function renderNewUserWHList(){
     if(!byCompany[cid]) byCompany[cid]=[];
     byCompany[cid].push(w);
   });
-  // store selected warehouse ids
-  window._selectedWH = window._selectedWH || new Set();
-
-  el.innerHTML = `<div id="wh-selected-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:28px"></div>` +
+  window._selectedWHNew = window._selectedWHNew || new Set();
+  el.innerHTML = `<div id="wh-new-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:26px"></div>` +
     COMPANIES.filter(c=>byCompany[c.id]).map(c=>`
-    <div style="margin-bottom:6px;border:1px solid var(--ig-border);border-radius:10px;overflow:hidden">
-      <div style="padding:9px 12px;background:#f8f8f8;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:600;font-size:13px" onclick="toggleWHDropdown('${c.id}')">
-        <span>🏢 ${c.name}</span>
-        <span id="wh-arrow-${c.id}">▼</span>
-      </div>
-      <div id="wh-drop-${c.id}" style="padding:6px 8px;display:flex;flex-direction:column;gap:4px">
-        ${(byCompany[c.id]||[]).map(w=>`
-          <div onclick="toggleWHSelect('${w.id}','${w.name}','${w.code}')" id="wh-item-${w.id}"
-            style="padding:8px 12px;border-radius:8px;cursor:pointer;font-size:13px;border:1px solid var(--ig-border);background:#fff;display:flex;align-items:center;gap:8px;transition:all .15s">
-            <span style="font-size:16px">🏭</span>
-            <span style="flex:1">${w.name} <span style="color:var(--ig-muted);font-size:11px">(${w.code})</span></span>
-            <span id="wh-check-${w.id}" style="color:#7c3aed;display:none;font-weight:700">✓</span>
-          </div>`).join('')}
-      </div>
+    <div style="margin-bottom:8px">
+      <label class="form-label" style="font-size:12px">${c.name}</label>
+      <select multiple id="wh-select-${c.id}" onchange="syncWHSelection()" style="width:100%;min-height:${Math.min((byCompany[c.id]||[]).length,4)*30+10}px;border:1px solid var(--ig-border);border-radius:8px;padding:6px;font-size:13px;font-family:inherit">
+        ${(byCompany[c.id]||[]).map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('')}
+      </select>
     </div>`).join('');
-
-  window._selectedWH = new Set();
-  updateWHPreview();
+  window._selectedWHNew = new Set();
+  updateWHNewPreview();
 }
 
-function toggleWHSelect(whId, whName, whCode){
-  if(!window._selectedWH) window._selectedWH = new Set();
-  const el = document.getElementById('wh-item-'+whId);
-  const chk = document.getElementById('wh-check-'+whId);
-  if(window._selectedWH.has(whId)){
-    window._selectedWH.delete(whId);
-    el.style.background='#fff'; el.style.borderColor='var(--ig-border)';
-    if(chk) chk.style.display='none';
-  } else {
-    window._selectedWH.add(whId);
-    el.style.background='#f5f3ff'; el.style.borderColor='#7c3aed';
-    if(chk) chk.style.display='';
-  }
-  updateWHPreview();
+function syncWHSelection(){
+  window._selectedWHNew = new Set();
+  document.querySelectorAll('[id^="wh-select-"]').forEach(sel=>{
+    [...sel.selectedOptions].forEach(o=>window._selectedWHNew.add(o.value));
+  });
+  updateWHNewPreview();
 }
 
-function updateWHPreview(){
-  const prev = document.getElementById('wh-selected-preview');
+function updateWHNewPreview(){
+  const prev=document.getElementById('wh-new-preview');
   if(!prev) return;
-  if(!window._selectedWH||window._selectedWH.size===0){
-    prev.innerHTML='<span style="color:var(--ig-muted);font-size:12px">ยังไม่ได้เลือกคลัง</span>';
-    return;
+  if(!window._selectedWHNew||window._selectedWHNew.size===0){
+    prev.innerHTML='<span style="color:var(--ig-muted);font-size:12px">ยังไม่ได้เลือกคลัง</span>'; return;
   }
-  prev.innerHTML=[...window._selectedWH].map(id=>{
+  prev.innerHTML=[...window._selectedWHNew].map(id=>{
     const w=allWarehouses.find(x=>x.id===id);
     return w?`<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px">🏭 ${w.name}</span>`:'';
   }).join('');
-}
-
-function toggleWHDropdown(cid){
-  const d=document.getElementById('wh-drop-'+cid);
-  const a=document.getElementById('wh-arrow-'+cid);
-  if(!d) return;
-  const isOpen=d.style.display!=='none';
-  d.style.display=isOpen?'none':'flex';
-  d.style.flexDirection='column';
-  if(a) a.style.transform=isOpen?'':'rotate(180deg)';
-}
-
-function toggleCompanyWH(cid,checked){
-  document.querySelectorAll(`.wh-cb-${cid}`).forEach(cb=>cb.checked=checked);
 }
 
 async function addUser(){
@@ -1055,13 +1020,15 @@ async function addUser(){
   const {data:nu,error}=await sb.from('app_users').insert({username,password:pass,display_name:display||username,role}).select().single();
   if(error){ toast(thaiError(error),'error'); return; }
   if(role!=='superuser'){
-    const checked = [...(window._selectedWH||new Set())];
+    const checked=[...(window._selectedWHNew||new Set())];
     if(checked.length) await sb.from('user_warehouses').insert(checked.map(wid=>({user_id:nu.id,warehouse_id:wid})));
   }
   document.getElementById('new-user-username').value='';
   document.getElementById('new-user-display').value='';
   document.getElementById('new-user-pass').value='';
-  window._selectedWH = new Set();
+  document.querySelectorAll('[id^="wh-select-"]').forEach(sel=>sel.selectedIndex=-1);
+  window._selectedWHNew = new Set();
+  updateWHNewPreview();
   await renderUsers();
   toast('เพิ่มผู้ใช้ '+username+' แล้ว','success');
 }
