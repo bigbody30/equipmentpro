@@ -963,13 +963,15 @@ function renderUserCard(u, whs){
         ${whs.map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${w.name} <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||'<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>'}
       </div>
       <div id="edit-wh-${u.id}" style="display:none;margin-top:8px">
-        <select onchange="grantWH('${u.id}',this.value,this)" style="font-size:12px;padding:4px 8px;border:1px solid var(--ig-border);border-radius:6px;width:100%">
-          <option value="">+ เพิ่มสิทธิ์คลัง...</option>
-          ${['pom','num','cvm'].filter(cid=>allWarehouses.some(w=>w.company_id?.toLowerCase()===cid)).map(cid=>`
-            <optgroup label="บริษัท ${cid.toUpperCase()}">
-              ${allWarehouses.filter(w=>w.company_id?.toLowerCase()===cid).map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('')}
-            </optgroup>`).join('')}
-        </select>
+        <div style="display:flex;gap:8px;margin-bottom:6px">
+          <select id="edit-wh-company-${u.id}" onchange="populateEditWHOptions('${u.id}')" style="font-size:12px;padding:4px 8px;border:1px solid var(--ig-border);border-radius:6px;flex:1">
+            <option value="">เลือกบริษัท...</option>
+            ${['pom','num','cvm'].filter(cid=>allWarehouses.some(w=>w.company_id?.toLowerCase()===cid)).map(cid=>`<option value="${cid}">บริษัท ${cid.toUpperCase()}</option>`).join('')}
+          </select>
+          <select id="edit-wh-pick-${u.id}" onchange="grantWH('${u.id}',this.value,this)" disabled style="font-size:12px;padding:4px 8px;border:1px solid var(--ig-border);border-radius:6px;flex:1.3">
+            <option value="">เลือกคลัง...</option>
+          </select>
+        </div>
         <div style="display:flex;gap:8px;margin-top:6px">
           <input type="password" id="edit-pass-${u.id}" class="form-control" placeholder="เปลี่ยนรหัสผ่าน (ว่าง=ไม่เปลี่ยน)" style="font-size:12px;flex:1">
           <button onclick="saveEditUser('${u.id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px">บันทึก</button>
@@ -977,6 +979,16 @@ function renderUserCard(u, whs){
       </div>`
     :`<div style="font-size:12px;color:#7c3aed">เข้าถึงได้ทุกคลัง</div>`}
   </div>`;
+}
+
+function populateEditWHOptions(uid){
+  const cid = document.getElementById('edit-wh-company-'+uid)?.value;
+  const pickSel = document.getElementById('edit-wh-pick-'+uid);
+  if(!pickSel) return;
+  if(!cid){ pickSel.innerHTML='<option value="">เลือกคลัง...</option>'; pickSel.disabled=true; return; }
+  const whs = allWarehouses.filter(w=>w.company_id?.toLowerCase()===cid);
+  pickSel.innerHTML = '<option value="">เลือกคลัง...</option>' + whs.map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('');
+  pickSel.disabled = false;
 }
 
 function openEditUser(uid){
@@ -1070,7 +1082,7 @@ async function grantWH(userId,whId,sel){
     {onConflict:'user_id,warehouse_id'}
   );
   if(error){ toast(thaiError(error),'error'); return; }
-  sel.value=''; await renderUsers();
+  await renderUsers();
   toast('เพิ่มสิทธิ์คลังแล้ว','success');
 }
 
