@@ -720,10 +720,11 @@ function showCompanySelector(whs){
     num: {bg:'#f0fdf4', color:'#16a34a', icon:'&#x1f3e2;'},
     cvm: {bg:'#fdf4ff', color:'#9333ea', icon:'&#x1f3e2;'},
   };
+  window._companyGroups = byCompany; // เก็บไว้อ้างอิงด้วย key แทน inline filter
   document.getElementById('wh-screen-subtitle').textContent = 'เลือกบริษัท';
   document.getElementById('wh-cards-container').innerHTML = Object.entries(byCompany).map(([cid,c])=>{
     const st = COMPANY_STYLE[cid] || {bg:'#f5f3ff', color:'#7c3aed', icon:'&#x1f3e2;'};
-    return `<div class="warehouse-card" style="margin-bottom:10px" onclick="showWarehouseList(allWarehouses.filter(w=>w.company_id?.toLowerCase()==='${cid}'))">
+    return `<div class="warehouse-card" style="margin-bottom:10px" onclick="selectCompanyGroup('${cid}')">
       <div class="warehouse-card-icon" style="background:${st.bg};font-size:24px">${st.icon}</div>
       <div class="warehouse-card-info">
         <div class="warehouse-card-name" style="color:${st.color};font-size:18px">${c.name}</div>
@@ -736,6 +737,12 @@ function showCompanySelector(whs){
   ws.classList.remove('hidden'); ws.style.display='';
 }
 
+function selectCompanyGroup(cid){
+  const group = window._companyGroups?.[cid];
+  if(!group){ toast('ไม่พบข้อมูลบริษัท','error'); return; }
+  showWarehouseList(group.whs);
+}
+
 function showWarehouseList(whs){
   const isSuperUser = currentUser?.role === 'superuser';
   const backBtn = isSuperUser
@@ -744,14 +751,21 @@ function showWarehouseList(whs){
       </button>` : '';
   const companyName = whs[0]?.companies?.name || whs[0]?.company_id?.toUpperCase() || '';
   document.getElementById('wh-screen-subtitle').textContent = companyName ? `${companyName} — เลือกคลัง` : 'เลือกคลัง';
-  document.getElementById('wh-cards-container').innerHTML = backBtn + whs.map(w=>
-    `<div class="warehouse-card" style="margin-bottom:8px" onclick="selectWarehouseObj(this)" data-wh='${JSON.stringify(w).replace(/'/g,"&apos;")}'>
+  window._whListCurrent = whs; // เก็บ list ไว้อ้างอิงด้วย index แทนการฝัง JSON ใน attribute
+  document.getElementById('wh-cards-container').innerHTML = backBtn + whs.map((w,idx)=>
+    `<div class="warehouse-card" style="margin-bottom:8px" onclick="selectWarehouseByIndex(${idx})">
       <div class="warehouse-card-icon" style="background:#f5f3ff">&#x1f3ed;</div>
       <div class="warehouse-card-info"><div class="warehouse-card-name" style="color:#7c3aed">${w.name}</div><div class="warehouse-card-desc">${w.code}</div></div>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     </div>`).join('');
   const ws2=document.getElementById('warehouse-screen');
   ws2.classList.remove('hidden'); ws2.style.display='';
+}
+
+function selectWarehouseByIndex(idx){
+  const wh = window._whListCurrent?.[idx];
+  if(!wh){ toast('ไม่พบข้อมูลคลัง','error'); return; }
+  selectWarehouseObj(wh);
 }
 
 let _whSelecting=false;
@@ -987,24 +1001,24 @@ function renderNewUserWHList(){
     if(!byCompany[cid]) byCompany[cid]=[];
     byCompany[cid].push(w);
   });
-  window._selectedWHNew = window._selectedWHNew || new Set();
   el.innerHTML = `<div id="wh-new-preview" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:26px"></div>` +
     COMPANIES.filter(c=>byCompany[c.id]).map(c=>`
     <div style="margin-bottom:8px">
       <label class="form-label" style="font-size:12px">${c.name}</label>
-      <select multiple id="wh-select-${c.id}" onchange="syncWHSelection()" style="width:100%;min-height:${Math.min((byCompany[c.id]||[]).length,4)*30+10}px;border:1px solid var(--ig-border);border-radius:8px;padding:6px;font-size:13px;font-family:inherit">
-        ${(byCompany[c.id]||[]).map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('')}
-      </select>
+      <div style="display:flex;flex-direction:column;gap:4px;border:1px solid var(--ig-border);border-radius:8px;padding:6px;max-height:160px;overflow-y:auto">
+        ${(byCompany[c.id]||[]).map(w=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" class="wh-cb-new" value="${w.id}" onchange="syncWHSelection()" style="accent-color:#7c3aed;width:16px;height:16px">
+            🏭 ${w.name} <span style="color:var(--ig-muted);font-size:11px">(${w.code})</span>
+          </label>`).join('')}
+      </div>
     </div>`).join('');
   window._selectedWHNew = new Set();
   updateWHNewPreview();
 }
 
 function syncWHSelection(){
-  window._selectedWHNew = new Set();
-  document.querySelectorAll('[id^="wh-select-"]').forEach(sel=>{
-    [...sel.selectedOptions].forEach(o=>window._selectedWHNew.add(o.value));
-  });
+  window._selectedWHNew = new Set([...document.querySelectorAll('.wh-cb-new:checked')].map(c=>c.value));
   updateWHNewPreview();
 }
 
@@ -1035,7 +1049,7 @@ async function addUser(){
   document.getElementById('new-user-username').value='';
   document.getElementById('new-user-display').value='';
   document.getElementById('new-user-pass').value='';
-  document.querySelectorAll('[id^="wh-select-"]').forEach(sel=>sel.selectedIndex=-1);
+  document.querySelectorAll('.wh-cb-new').forEach(cb=>cb.checked=false);
   window._selectedWHNew = new Set();
   updateWHNewPreview();
   await renderUsers();
