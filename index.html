@@ -651,8 +651,9 @@ async function doLogin(){
     const {data,error} = await sb.from('app_users').select('*').eq('username',u).eq('password',p).single();
     if(error||!data){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
     currentUser = data;
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('login-screen').classList.add('hidden');
+    const loginScr = document.getElementById('login-screen');
+    loginScr.style.display='none';
+    loginScr.classList.add('hidden');
     await loadCompaniesAndWarehouses();
     if(currentUser.role==='superuser'){
       document.getElementById('btn-admin').style.display='';
@@ -755,8 +756,16 @@ function showWarehouseList(whs){
 
 let _whSelecting=false;
 async function selectWarehouseObj(elOrObj){
-  let wh = elOrObj instanceof Element ? JSON.parse(elOrObj.getAttribute('data-wh')) : elOrObj;
-  if(_whSelecting) return; _whSelecting=true; setTimeout(()=>_whSelecting=false,1500);
+  let wh;
+  try {
+    wh = elOrObj instanceof Element ? JSON.parse(elOrObj.getAttribute('data-wh')) : elOrObj;
+  } catch(e) {
+    toast('เกิดข้อผิดพลาดในการอ่านข้อมูลคลัง','error');
+    console.error('selectWarehouseObj parse error', e);
+    return;
+  }
+  if(!wh || !wh.code){ toast('ไม่พบข้อมูลคลัง','error'); return; }
+  if(_whSelecting) return; _whSelecting=true; setTimeout(()=>{ _whSelecting=false; },1500);
   currentWarehouse = wh.code;
   const badge = document.getElementById('topbar-dept-badge');
   badge.textContent='&#x1f3ed; '+wh.name; badge.style.display='inline-flex';
