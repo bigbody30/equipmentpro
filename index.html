@@ -202,8 +202,8 @@ body{font-family:'Kanit','Sarabun',sans-serif;background:#fafafa;color:var(--ig-
 
 <!-- Warehouse Selector (dynamic) -->
 <div class="warehouse-screen hidden" id="warehouse-screen">
-  <button id="wh-admin-corner-btn" onclick="openAdmin()" style="display:none;position:absolute;top:20px;right:20px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;align-items:center;gap:6px;z-index:1">
-    &#x2699;&#xfe0f; Admin
+  <button id="wh-admin-corner-btn" onclick="openAdmin('users')" style="display:none;position:absolute;top:20px;right:20px;background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;align-items:center;gap:6px;z-index:1">
+    &#x2699;&#xfe0f; เพิ่ม/จัดการผู้ใช้
   </button>
   <div class="warehouse-logo">equipment</div>
   <div class="warehouse-subtitle" id="wh-screen-subtitle">เลือกคลังที่ต้องการ</div>
@@ -871,11 +871,15 @@ function doLogout(){
 }
 
 // ===== ADMIN PANEL =====
-async function openAdmin(){
+async function openAdmin(startTab){
   await loadCompaniesAndWarehouses();
   renderWarehouseAdmin(); await renderUsers();
   renderNewUserWHList();
   openModal('modal-admin');
+  if(startTab==='users'){
+    const btn = document.getElementById('admin-tab-users');
+    if(btn) switchAdminTab('users', btn);
+  }
 }
 
 function switchAdminTab(tab,btn){
