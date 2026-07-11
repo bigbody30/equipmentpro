@@ -2202,6 +2202,24 @@ function toast(msg,type=''){
 }
 
 // ===== HELPERS =====
+function today(){
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+function showSkeleton(){
+  const grid = document.getElementById('product-grid');
+  const empty = document.getElementById('equipment-empty');
+  if(!grid) return;
+  if(empty) empty.style.display='none';
+  grid.style.display='grid';
+  grid.style.gridTemplateColumns='repeat(5,1fr)';
+  grid.innerHTML = Array.from({length:10}).map(()=>
+    `<div class="skeleton" style="aspect-ratio:1;border-radius:6px"></div>`
+  ).join('');
+}
 function genNum(prefix){
   const now = new Date();
   const yy = String(now.getFullYear()).slice(-2);
@@ -2219,6 +2237,19 @@ function fmtDate(s){
 }
 
 // ===== START =====
+function init(){
+  // ตั้งค่าเริ่มต้นให้แน่ใจว่าหน้าจอสะอาดตอนโหลดครั้งแรก (กันเคส element ค้างสถานะจาก reload)
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-screen').style.display='';
+  document.getElementById('warehouse-screen').classList.add('hidden');
+  document.getElementById('warehouse-screen').style.display='none';
+  document.querySelectorAll('.modal-overlay').forEach(m=>m.classList.add('hidden'));
+  document.getElementById('topbar-dept-badge').style.display='none';
+  setConn(false);
+  // กด Enter ในช่องรหัสผ่านแล้วให้ล็อกอินได้เลย
+  const passInput = document.getElementById('login-pass');
+  if(passInput) passInput.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+}
 init();
 </script>
 </body>
