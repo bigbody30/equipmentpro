@@ -635,6 +635,9 @@ let sb = null; // supabase client
 let currentUser = null;
 let allCompanies = [];
 let allWarehouses = [];
+let equipments = [];
+let issueTransactions = [];
+let receiveTransactions = [];
 
 function togglePass(){
   const inp = document.getElementById('login-pass');
@@ -1148,6 +1151,12 @@ async function deleteUser(id,username){
 
 // ===== WAREHOUSE COMPAT =====
 let currentWarehouse = null;
+let usingDemo = false;
+let editingIssueId = null, issueTxItems = [];
+let editingReceiveId = null, receiveTxItems = [];
+let pickerTarget = null, pickerSelected = {};
+let qrTarget = null, qrStream = null;
+let issueChart = null, receiveChart = null;
 const WAREHOUSES = {};
 
 // ===== THAI ERROR TRANSLATOR =====
@@ -1919,6 +1928,8 @@ function filterStock(type, btn){
 
 // ===== REPORTS =====
 const MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+let issueReportMonth = new Date();
+let receiveReportMonth = new Date();
 
 function changeMonth(type,d){
   if(type==='issue'){ issueReportMonth=new Date(issueReportMonth.getFullYear(),issueReportMonth.getMonth()+d,1); renderIssueReport(); }
