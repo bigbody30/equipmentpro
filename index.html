@@ -668,7 +668,15 @@ async function doLogin(){
     if(!sb) sb = window.supabase.createClient(SB_URL, SB_KEY);
     // ตรวจสอบรหัสผ่านฝั่ง DB ผ่าน RPC (รหัสผ่าน hash ด้วย pgcrypto ไม่ถูกเทียบ/อ่านเป็น plain text ฝั่ง client)
     const {data,error} = await sb.rpc('login_user', { p_username: u, p_password: p });
-    if(error||!data||!data.length){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
+    if(error){
+      // แยกกรณี error จริงของระบบ (เช่น ยังไม่ได้รัน SQL migration, RPC หาไม่เจอ, permission ผิด)
+      // ออกจากกรณีรหัสผ่านผิดปกติธรรมดา เพื่อให้แก้ปัญหาได้ตรงจุด ไม่ใช่เดา
+      console.error('login_user RPC error:', error);
+      err.textContent = 'เข้าสู่ระบบไม่สำเร็จ: ' + thaiError(error);
+      err.style.display='block';
+      return;
+    }
+    if(!data||!data.length){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
     currentUser = data[0];
     // สำคัญ: ห้ามซ่อนหน้า login จนกว่าจะมั่นใจว่าจะไปหน้าเลือกคลัง/เข้าคลังได้สำเร็จแน่นอน
     // (เดิมซ่อนหน้า login ทันทีตรงนี้ ทำให้ถ้า error เกิดขึ้นระหว่างขั้นตอนถัดไป
@@ -1176,6 +1184,8 @@ const WAREHOUSES = {};
 // ===== THAI ERROR TRANSLATOR =====
 function thaiError(e){
   const msg = (e?.message || e?.error_description || String(e)).toLowerCase();
+  if(msg.includes('could not find the function') || msg.includes('function') && msg.includes('does not exist'))
+    return 'ยังไม่ได้รันไฟล์ migration.sql ใน Supabase (หาฟังก์ชันที่จำเป็นไม่เจอ) กรุณารัน SQL migration ก่อนใช้งาน';
   if(msg.includes('insufficient_stock'))
     return 'สต๊อกไม่พอสำหรับรายการนี้ (อาจมีคนอื่นเบิกไปพร้อมกัน) กรุณาลองใหม่';
   if(msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('unique_violation'))
