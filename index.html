@@ -639,6 +639,18 @@ let equipments = [];
 let issueTransactions = [];
 let receiveTransactions = [];
 
+// ===== XSS PROTECTION =====
+// ทุกข้อความที่มาจากผู้ใช้/ฐานข้อมูล ต้องผ่านฟังก์ชันนี้ก่อนแทรกลงใน innerHTML เสมอ
+function escapeHtml(str){
+  if(str===null||str===undefined) return '';
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
+
 function togglePass(){
   const inp = document.getElementById('login-pass');
   inp.type = inp.type==='password' ? 'text' : 'password';
@@ -654,9 +666,10 @@ async function doLogin(){
   btn.textContent='กำลังเข้าสู่ระบบ...'; btn.disabled=true;
   try {
     if(!sb) sb = window.supabase.createClient(SB_URL, SB_KEY);
-    const {data,error} = await sb.from('app_users').select('*').eq('username',u).eq('password',p).single();
-    if(error||!data){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
-    currentUser = data;
+    // ตรวจสอบรหัสผ่านฝั่ง DB ผ่าน RPC (รหัสผ่าน hash ด้วย pgcrypto ไม่ถูกเทียบ/อ่านเป็น plain text ฝั่ง client)
+    const {data,error} = await sb.rpc('login_user', { p_username: u, p_password: p });
+    if(error||!data||!data.length){ err.textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'; err.style.display='block'; return; }
+    currentUser = data[0];
     // สำคัญ: ห้ามซ่อนหน้า login จนกว่าจะมั่นใจว่าจะไปหน้าเลือกคลัง/เข้าคลังได้สำเร็จแน่นอน
     // (เดิมซ่อนหน้า login ทันทีตรงนี้ ทำให้ถ้า error เกิดขึ้นระหว่างขั้นตอนถัดไป
     //  ผู้ใช้จะหลุดไปเห็นหน้าใช้งานจริงโดยไม่รู้ว่าอยู่บริษัท/คลังไหน เพราะ error message
@@ -674,7 +687,6 @@ async function doLogin(){
       if(uwErr){ err.textContent='โหลดสิทธิ์คลังไม่สำเร็จ: '+uwErr.message; err.style.display='block'; toast(err.textContent,'error'); return; }
       const whIds = (uwData||[]).map(r=>r.warehouse_id);
       const myWH = allWarehouses.filter(w=>whIds.includes(w.id));
-      console.log('DEBUG login: whIds=', whIds, 'allWarehouses=', allWarehouses.map(w=>({id:w.id,name:w.name})), 'myWH=', myWH);
       if(!myWH.length){
         err.textContent='ไม่มีสิทธิ์เข้าถึงคลังใด ('+whIds.length+' รายการสิทธิ์, '+allWarehouses.length+' คลังทั้งหมด) ติดต่อ Admin';
         err.style.display='block';
@@ -754,7 +766,7 @@ function showCompanySelector(whs){
     return `<div class="warehouse-card" style="margin-bottom:10px" onclick="selectCompanyGroup('${cid}')">
       <div class="warehouse-card-icon" style="background:${st.bg};font-size:24px">${st.icon}</div>
       <div class="warehouse-card-info">
-        <div class="warehouse-card-name" style="color:${st.color};font-size:18px">${c.name}</div>
+        <div class="warehouse-card-name" style="color:${st.color};font-size:18px">${escapeHtml(c.name)}</div>
         <div class="warehouse-card-desc">${c.whs.length} คลัง</div>
       </div>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${st.color}" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
@@ -783,7 +795,7 @@ function showWarehouseList(whs){
   document.getElementById('wh-cards-container').innerHTML = backBtn + whs.map((w,idx)=>
     `<div class="warehouse-card" style="margin-bottom:8px" onclick="selectWarehouseByIndex(${idx})">
       <div class="warehouse-card-icon" style="background:#f5f3ff">&#x1f3ed;</div>
-      <div class="warehouse-card-info"><div class="warehouse-card-name" style="color:#7c3aed">${w.name}</div><div class="warehouse-card-desc">${w.code}</div></div>
+      <div class="warehouse-card-info"><div class="warehouse-card-name" style="color:#7c3aed">${escapeHtml(w.name)}</div><div class="warehouse-card-desc">${escapeHtml(w.code)}</div></div>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
     </div>`).join('');
   const ws2=document.getElementById('warehouse-screen');
@@ -906,19 +918,19 @@ function renderWarehouseAdmin(){
   el.innerHTML = Object.keys(byCompany).length
     ? Object.entries(byCompany).sort().map(([cname,whs])=>`
         <div style="margin-bottom:12px">
-          <div style="font-size:11px;font-weight:700;color:var(--ig-muted);margin-bottom:6px">บริษัท ${cname}</div>
+          <div style="font-size:11px;font-weight:700;color:var(--ig-muted);margin-bottom:6px">บริษัท ${escapeHtml(cname)}</div>
           ${whs.map(w=>`
           <div style="border:1px solid var(--ig-border);border-radius:10px;margin-bottom:6px;overflow:hidden">
             <div style="display:flex;align-items:center;gap:10px;padding:10px">
               <span>&#x1f3ed;</span>
-              <div style="flex:1"><div style="font-weight:500">${w.name}</div><div style="font-size:12px;color:var(--ig-muted)">${w.code}</div></div>
+              <div style="flex:1"><div style="font-weight:500">${escapeHtml(w.name)}</div><div style="font-size:12px;color:var(--ig-muted)">${escapeHtml(w.code)}</div></div>
               <button onclick="toggleEditWH('${w.id}')" style="background:#eff6ff;color:#2563eb;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">แก้ไข</button>
-              <button onclick="deleteWarehouse('${w.id}','${w.name}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">ลบ</button>
+              <button onclick="deleteWarehouse('${w.id}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">ลบ</button>
             </div>
             <div id="edit-wh-panel-${w.id}" style="display:none;padding:8px 12px;background:#f9f9f9;border-top:1px solid var(--ig-border)">
               <div style="display:flex;gap:8px">
-                <input type="text" id="edit-wh-name-${w.id}" class="form-control" value="${w.name}" placeholder="ชื่อคลัง" style="flex:2;font-size:13px">
-                <input type="text" id="edit-wh-code-${w.id}" class="form-control" value="${w.code}" placeholder="รหัสคลัง" style="flex:1;font-size:13px">
+                <input type="text" id="edit-wh-name-${w.id}" class="form-control" value="${escapeHtml(w.name)}" placeholder="ชื่อคลัง" style="flex:2;font-size:13px">
+                <input type="text" id="edit-wh-code-${w.id}" class="form-control" value="${escapeHtml(w.code)}" placeholder="รหัสคลัง" style="flex:1;font-size:13px">
                 <button onclick="saveWarehouse('${w.id}')" style="background:#7c3aed;color:#fff;border:none;padding:4px 14px;border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap">บันทึก</button>
               </div>
             </div>
@@ -954,7 +966,8 @@ async function addWarehouse(){
   toast('เพิ่มคลัง '+name+' แล้ว','success');
 }
 
-async function deleteWarehouse(id,name){
+async function deleteWarehouse(id){
+  const name = allWarehouses.find(w=>w.id===id)?.name || '';
   if(!confirm('ลบคลัง "'+name+'" ?')) return;
   await sb.from('warehouses').delete().eq('id',id);
   await loadCompaniesAndWarehouses(); renderWarehouseAdmin();
@@ -965,7 +978,7 @@ let allUsers=[];
 let allUsersUWMap = {};
 
 async function renderUsers(){
-  const {data}=await sb.from('app_users').select('*').order('username');
+  const {data}=await sb.rpc('list_users');
   allUsers=data||[];
   const {data:uwData}=await sb.from('user_warehouses').select('user_id,warehouse_id,warehouses(id,name,code,company_id)');
   allUsersUWMap={};
@@ -987,16 +1000,16 @@ function renderUserCard(u, whs){
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
       <span style="font-size:20px">${u.role==='superuser'?'&#x1f451;':'&#x1f464;'}</span>
       <div style="flex:1">
-        <div style="font-weight:600">${u.display_name||u.username} <span style="font-size:11px;color:var(--ig-muted)">(${u.username})</span></div>
+        <div style="font-weight:600">${escapeHtml(u.display_name||u.username)} <span style="font-size:11px;color:var(--ig-muted)">(${escapeHtml(u.username)})</span></div>
         <div style="font-size:11px;color:${u.role==='superuser'?'#7c3aed':'#2563eb'};font-weight:600">${u.role==='superuser'?'SuperUser':'User'}</div>
       </div>
       <button onclick="openEditUser('${u.id}')" style="background:#eff6ff;color:#2563eb;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">แก้ไข</button>
-      <button onclick="deleteUser('${u.id}','${u.username}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">ลบ</button>
+      <button onclick="deleteUser('${u.id}')" style="background:#fee2e2;color:#dc2626;border:none;padding:4px 10px;border-radius:6px;cursor:pointer;font-size:12px">ลบ</button>
     </div>
     ${u.role!=='superuser'?`
       <div style="font-size:12px;color:var(--ig-muted);margin-bottom:4px">สิทธิ์คลัง:</div>
       <div style="display:flex;flex-wrap:wrap;gap:4px">
-        ${whs.map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${w.name} <span style="opacity:0.6;font-size:10px">[${(w.company_id||'').toUpperCase()}]</span> <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||'<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>'}
+        ${whs.map(w=>`<span style="background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px;font-size:11px">&#x1f3ed; ${escapeHtml(w.name)} <span style="opacity:0.6;font-size:10px">[${escapeHtml((w.company_id||'').toUpperCase())}]</span> <span onclick="revokeWH('${u.id}','${w.id}')" style="cursor:pointer;color:#dc2626;margin-left:4px">&times;</span></span>`).join('')||'<span style="color:var(--ig-muted);font-size:12px">ยังไม่มีสิทธิ์</span>'}
       </div>
       <div id="edit-wh-${u.id}" style="display:none;margin-top:8px">
         <div style="display:flex;gap:8px;margin-bottom:6px">
@@ -1023,7 +1036,7 @@ function populateEditWHOptions(uid){
   if(!pickSel) return;
   if(!cid){ pickSel.innerHTML='<option value="">เลือกคลัง...</option>'; pickSel.disabled=true; return; }
   const whs = allWarehouses.filter(w=>w.company_id?.toLowerCase()===cid);
-  pickSel.innerHTML = '<option value="">เลือกคลัง...</option>' + whs.map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('');
+  pickSel.innerHTML = '<option value="">เลือกคลัง...</option>' + whs.map(w=>`<option value="${w.id}">${escapeHtml(w.name)} (${escapeHtml(w.code)})</option>`).join('');
   pickSel.disabled = false;
 }
 
@@ -1037,7 +1050,7 @@ async function saveEditUser(uid){
   const passEl=document.getElementById('edit-pass-'+uid);
   const newPass=passEl?.value?.trim();
   if(newPass){
-    const {error}=await sb.from('app_users').update({password:newPass}).eq('id',uid);
+    const {error}=await sb.rpc('set_user_password', { p_user_id: uid, p_new_password: newPass });
     if(error){ toast(thaiError(error),'error'); return; }
     passEl.value='';
     toast('เปลี่ยนรหัสผ่านแล้ว','success');
@@ -1070,7 +1083,7 @@ function populateNewWHOptions(){
   if(!pickSel) return;
   if(!cid){ pickSel.innerHTML='<option value="">เลือกคลัง...</option>'; pickSel.disabled=true; return; }
   const whs = allWarehouses.filter(w=>w.company_id?.toLowerCase()===cid);
-  pickSel.innerHTML = '<option value="">เลือกคลัง...</option>' + whs.map(w=>`<option value="${w.id}">${w.name} (${w.code})</option>`).join('');
+  pickSel.innerHTML = '<option value="">เลือกคลัง...</option>' + whs.map(w=>`<option value="${w.id}">${escapeHtml(w.name)} (${escapeHtml(w.code)})</option>`).join('');
   pickSel.disabled = false;
 }
 
@@ -1099,7 +1112,7 @@ function updateWHNewPreview(){
   }
   prev.innerHTML=[...window._selectedWHNew].map(id=>{
     const w=allWarehouses.find(x=>x.id===id);
-    return w?`<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px">🏭 ${w.name} <span onclick="removeWHFromSelection('${id}')" style="cursor:pointer;margin-left:4px">&times;</span></span>`:'';
+    return w?`<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px">🏭 ${escapeHtml(w.name)} <span onclick="removeWHFromSelection('${id}')" style="cursor:pointer;margin-left:4px">&times;</span></span>`:'';
   }).join('');
 }
 
@@ -1109,7 +1122,7 @@ async function addUser(){
   const pass=document.getElementById('new-user-pass').value;
   const role=document.getElementById('new-user-role').value;
   if(!username||!pass){ toast('กรอกชื่อผู้ใช้และรหัสผ่าน','error'); return; }
-  const {data:nu,error}=await sb.from('app_users').insert({username,password:pass,display_name:display||username,role}).select().single();
+  const {data:nu,error}=await sb.rpc('create_user_hashed', { p_username: username, p_password: pass, p_display_name: display||username, p_role: role }).single();
   if(error){ toast(thaiError(error),'error'); return; }
   if(role!=='superuser'){
     const checked=[...(window._selectedWHNew||new Set())];
@@ -1141,17 +1154,18 @@ async function revokeWH(userId,whId){
   toast('นำสิทธิ์ออกแล้ว','success');
 }
 
-async function deleteUser(id,username){
+async function deleteUser(id){
+  const username = allUsers.find(u=>u.id===id)?.username || '';
   if(username==='superuser'){ toast('ไม่สามารถลบ superuser หลัก','error'); return; }
   if(!confirm('ลบผู้ใช้ "'+username+'" ?')) return;
-  await sb.from('app_users').delete().eq('id',id);
+  const { error } = await sb.rpc('delete_app_user', { p_user_id: id });
+  if(error){ toast(thaiError(error),'error'); return; }
   await renderUsers();
   toast('ลบแล้ว','success');
 }
 
 // ===== WAREHOUSE COMPAT =====
 let currentWarehouse = null;
-let usingDemo = false;
 let editingIssueId = null, issueTxItems = [];
 let editingReceiveId = null, receiveTxItems = [];
 let pickerTarget = null, pickerSelected = {};
@@ -1162,6 +1176,8 @@ const WAREHOUSES = {};
 // ===== THAI ERROR TRANSLATOR =====
 function thaiError(e){
   const msg = (e?.message || e?.error_description || String(e)).toLowerCase();
+  if(msg.includes('insufficient_stock'))
+    return 'สต๊อกไม่พอสำหรับรายการนี้ (อาจมีคนอื่นเบิกไปพร้อมกัน) กรุณาลองใหม่';
   if(msg.includes('duplicate key') || msg.includes('unique constraint') || msg.includes('unique_violation'))
     return 'ข้อมูลซ้ำ: รหัสหรือชื่อนี้มีอยู่แล้วในระบบ';
   if(msg.includes('foreign key') || msg.includes('foreign_key_violation'))
@@ -1187,22 +1203,9 @@ function thaiError(e){
   return 'เกิดข้อผิดพลาด: ' + (e?.message || String(e));
 }
 
-// ===== SUPABASE CONNECT =====
-async function connectSupabase(url, key){
-  try {
-    sb = window.supabase.createClient(url, key);
-    equipments=[]; issueTransactions=[]; receiveTransactions=[];
-    usingDemo = false;
-    await loadAll();
-    setConn(true);
-  } catch(e){
-    setConn(false);
-    toast(thaiError(e), 'error');
-  }
-}
-
 // ===== CONFIG =====
-// saveConfig removed - credentials are now hardcoded server-side
+// credentials are hardcoded server-side (SB_URL / SB_KEY above); connection is
+// established lazily in doLogin() the first time a user logs in.
 
 function setConn(ok){
   document.getElementById('conn-dot').className = 'conn-dot' + (ok ? ' on' : '');
@@ -1267,16 +1270,16 @@ function renderEquip(){
   document.getElementById('stat-ok').textContent = total - emptyCount - low;
   if(!filtered.length){ grid.style.display='none'; empty.style.display='block';
     document.getElementById('equipment-empty').innerHTML = q
-      ? `<div class="empty-icon">🔍</div><div class="empty-text">ไม่พบ "${q}"</div><div class="empty-sub">ลองค้นหาด้วยคำอื่น</div>`
+      ? `<div class="empty-icon">🔍</div><div class="empty-text">ไม่พบ "${escapeHtml(q)}"</div><div class="empty-sub">ลองค้นหาด้วยคำอื่น</div>`
       : `<div class="empty-icon">📦</div><div class="empty-text">ยังไม่มีอุปกรณ์สำนักงาน</div><div class="empty-sub">กดปุ่ม "เพิ่มอุปกรณ์" เพื่อเริ่มต้น</div>`;
   } else { grid.style.display='grid'; grid.style.gridTemplateColumns='repeat(5,1fr)'; empty.style.display='none'; }
   grid.innerHTML = filtered.map(eq=>`
     <div class="product-tile" onclick="showEquipDetail('${eq.id}')">
-      ${eq.img ? `<img src="${eq.img}" alt="${eq.name}" onerror="this.style.display='none'">` :
-        `<div class="product-no-img"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><div style="font-size:9px;color:#aaa;margin-top:3px">${eq.name}</div></div>`}
+      ${eq.img ? `<img src="${escapeHtml(eq.img)}" alt="${escapeHtml(eq.name)}" onerror="this.style.display='none'">` :
+        `<div class="product-no-img"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg><div style="font-size:9px;color:#aaa;margin-top:3px">${escapeHtml(eq.name)}</div></div>`}
       ${eq.qty===0 ? `<div class="tile-low" style="background:#b91c1c">หมด</div>` : eq.qty<=eq.minQty ? `<div class="tile-low" style="background:#facc15;color:#fff">ใกล้หมด</div>` : ''}
-      <div class="tile-name">${eq.name}</div>
-      <div class="tile-overlay"><div style="font-weight:700;font-size:15px">${eq.qty}</div><div style="font-size:11px">${eq.unit}</div><div style="font-size:10px;opacity:.8">${eq.code}</div></div>
+      <div class="tile-name">${escapeHtml(eq.name)}</div>
+      <div class="tile-overlay"><div style="font-weight:700;font-size:15px">${eq.qty}</div><div style="font-size:11px">${escapeHtml(eq.unit)}</div><div style="font-size:10px;opacity:.8">${escapeHtml(eq.code)}</div></div>
     </div>`).join('');
   renderStories();
 }
@@ -1295,7 +1298,7 @@ function renderStories(){
   s.innerHTML = items.map((x,i)=>{
     const ringColor = i===2 ? '#b91c1c' : '';
     const ringStyle = ringColor ? `style="background:conic-gradient(${ringColor} 0%,${ringColor} 100%)"` : '';
-    return `<div class="story-item"><div class="story-ring" ${ringStyle}><div class="story-ring-inner">${x.img?`<img src="${x.img}" alt="">`:`<div class="story-icon">${x.icon||'📦'}</div>`}</div></div><div class="story-label">${x.label}</div><div class="story-count">${x.count}</div></div>`;
+    return `<div class="story-item"><div class="story-ring" ${ringStyle}><div class="story-ring-inner">${x.img?`<img src="${escapeHtml(x.img)}" alt="">`:`<div class="story-icon">${x.icon||'📦'}</div>`}</div></div><div class="story-label">${escapeHtml(x.label)}</div><div class="story-count">${escapeHtml(x.count)}</div></div>`;
   }).join('');
 }
 
@@ -1304,13 +1307,13 @@ function showEquipDetail(id){
   document.getElementById('detail-equip-name').textContent = eq.name;
   const isLow = eq.qty <= eq.minQty;
   document.getElementById('equip-detail-body').innerHTML = `
-    ${eq.img ? `<img src="${eq.img}" style="width:100%;max-height:200px;object-fit:cover;border-radius:12px;margin-bottom:14px">` : ''}
+    ${eq.img ? `<img src="${escapeHtml(eq.img)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:12px;margin-bottom:14px">` : ''}
     <table class="detail-table">
-      <tr><td style="color:var(--ig-muted);width:90px">รหัส</td><td style="font-weight:500">${eq.code}</td></tr>
-      <tr><td style="color:var(--ig-muted)">ชื่อ</td><td>${eq.name}</td></tr>
-      <tr><td style="color:var(--ig-muted)">คงเหลือ</td><td><span style="font-size:22px;font-weight:700;color:${isLow?'var(--ig-red)':'var(--ig-green)'}">${eq.qty}</span> <span style="color:var(--ig-muted)">${eq.unit}</span></td></tr>
+      <tr><td style="color:var(--ig-muted);width:90px">รหัส</td><td style="font-weight:500">${escapeHtml(eq.code)}</td></tr>
+      <tr><td style="color:var(--ig-muted)">ชื่อ</td><td>${escapeHtml(eq.name)}</td></tr>
+      <tr><td style="color:var(--ig-muted)">คงเหลือ</td><td><span style="font-size:22px;font-weight:700;color:${isLow?'var(--ig-red)':'var(--ig-green)'}">${eq.qty}</span> <span style="color:var(--ig-muted)">${escapeHtml(eq.unit)}</span></td></tr>
       <tr><td style="color:var(--ig-muted)">สถานะ</td><td>${eq.qty===0?'<span class="badge badge-danger" style="background:#b91c1c;color:#fff">🚫 หมด</span>':isLow?'<span class="badge" style="background:#fef3c7;color:#92400e">⚠️ ใกล้หมด</span>':'<span class="badge badge-success">✓ ปกติ</span>'}</td></tr>
-      <tr><td style="color:var(--ig-muted)">ขั้นต่ำ</td><td>${eq.minQty} ${eq.unit}</td></tr>
+      <tr><td style="color:var(--ig-muted)">ขั้นต่ำ</td><td>${eq.minQty} ${escapeHtml(eq.unit)}</td></tr>
     </table>
     <div style="display:flex;gap:8px;margin-top:14px">
       <button class="btn btn-outline btn-block" onclick="editEquipment('${eq.id}')">✏️ แก้ไข</button>
@@ -1338,22 +1341,17 @@ function editEquipment(id){
   document.getElementById('equip-min-qty').value = eq.minQty;
   document.getElementById('equip-img-data').value = eq.img || '';
   document.getElementById('equip-img-url').value = (eq.img && !eq.img.startsWith('data:')) ? eq.img : '';
-  if(eq.img) document.getElementById('equip-img-preview').innerHTML = `<img src="${eq.img}" style="max-height:150px;border-radius:8px">`;
+  if(eq.img) document.getElementById('equip-img-preview').innerHTML = `<img src="${escapeHtml(eq.img)}" style="max-height:150px;border-radius:8px">`;
   else resetImgPreview();
   openModal('modal-add-equipment');
 }
 
 async function deleteEquipment(id){
   if(!confirm('ลบอุปกรณ์นี้?')) return;
-  if(!usingDemo){
-    const { error } = await sb.from('materials').delete().eq('id', id);
-    if(error){ toast(thaiError(error),'error'); return; }
-  } else {
-    const i = equipments.findIndex(e=>e.id===id); if(i>=0) equipments.splice(i,1);
-  }
+  const { error } = await sb.from('materials').delete().eq('id', id);
+  if(error){ toast(thaiError(error),'error'); return; }
   closeModal('modal-equip-detail');
-  if(!usingDemo) await reloadEquip();
-  else { renderEquip(); renderStockReport(); checkLowStock(); }
+  await reloadEquip();
   toast('ลบแล้ว', 'error');
 }
 
@@ -1368,21 +1366,15 @@ async function saveEquipment(){
   const btn = document.getElementById('save-equip-btn');
   btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...'; btn.disabled = true;
 
-  if(!usingDemo){
-    const payload = { code, name, unit, min_qty: minQty, image_url: img||null };
-    let error;
-    if(editId){
-      ({ error } = await sb.from('materials').update(payload).eq('id', editId));
-    } else {
-      ({ error } = await sb.from('materials').insert({ ...payload, current_stock: 0, warehouse_id: currentWarehouse }));
-    }
-    if(error){ toast(thaiError(error),'error'); btn.innerHTML='บันทึก'; btn.disabled=false; return; }
-    await reloadEquip();
+  const payload = { code, name, unit, min_qty: minQty, image_url: img||null };
+  let error;
+  if(editId){
+    ({ error } = await sb.from('materials').update(payload).eq('id', editId));
   } else {
-    if(editId){ const i=equipments.findIndex(e=>e.id===editId); if(i>=0) equipments[i]={...equipments[i],code,name,unit,minQty,img}; }
-    else equipments.push({id:Date.now().toString(),code,name,unit,minQty,img,qty:0});
-    renderEquip(); renderStockReport(); checkLowStock();
+    ({ error } = await sb.from('materials').insert({ ...payload, current_stock: 0, warehouse_id: currentWarehouse }));
   }
+  if(error){ toast(thaiError(error),'error'); btn.innerHTML='บันทึก'; btn.disabled=false; return; }
+  await reloadEquip();
   closeModal('modal-add-equipment');
   btn.innerHTML = 'บันทึก'; btn.disabled = false;
   toast('บันทึกสำเร็จ ✓','success');
@@ -1442,10 +1434,8 @@ function previewEquipImgUrl(url){
 }
 
 async function reloadEquip(){
-  if(!usingDemo){
-    const { data } = await sb.from('materials').select('*').eq('warehouse_id', currentWarehouse).order('code');
-    equipments = (data||[]).map(mapMaterial);
-  }
+  const { data } = await sb.from('materials').select('*').eq('warehouse_id', currentWarehouse).order('code');
+  equipments = (data||[]).map(mapMaterial);
   renderEquip(); renderStockReport(); checkLowStock();
 }
 
@@ -1456,12 +1446,12 @@ function renderIssueList(){
   if(!sorted.length){ wrap.innerHTML=`<div class="empty-state"><div class="empty-icon">📤</div><div class="empty-text">ยังไม่มีรายการเบิก</div></div>`; return; }
   wrap.innerHTML = `<div class="card"><div style="padding:0">${sorted.map(tx=>{
     const total = (tx.items||[]).reduce((s,i)=>s+(i.qty||0),0);
-    const summary = (tx.items||[]).map(i=>`${i.name} ×${i.qty}`).join(', ');
+    const summary = (tx.items||[]).map(i=>`${escapeHtml(i.name)} ×${i.qty}`).join(', ');
     return `<div class="tx-item">
       <div class="tx-avatar" style="background:linear-gradient(135deg,#ffeef0,#ffd6da)">📤</div>
       <div class="tx-info" onclick="viewDoc('issue','${tx.id}')">
-        <div class="tx-name">${tx.requester} <span style="color:var(--ig-muted);font-size:11px">${tx.dept||''}</span></div>
-        <div class="tx-sub">${tx.docNum} · ${fmtDate(tx.date)}</div>
+        <div class="tx-name">${escapeHtml(tx.requester)} <span style="color:var(--ig-muted);font-size:11px">${escapeHtml(tx.dept||'')}</span></div>
+        <div class="tx-sub">${escapeHtml(tx.docNum)} · ${fmtDate(tx.date)}</div>
         <div class="tx-sub">${summary}</div>
         <div class="tx-actions">
           <button class="btn btn-sm btn-outline" style="padding:3px 10px" onclick="event.stopPropagation();editIssue('${tx.id}')">✏️ แก้ไข</button>
@@ -1499,21 +1489,10 @@ function editIssue(id){
 
 async function deleteIssue(id){
   if(!confirm('ลบรายการเบิกนี้?\n(สต๊อกจะถูกคืน)')) return;
-  const tx = issueTransactions.find(t=>t.id===id);
-  if(!usingDemo && tx){
-    // คืนสต๊อกก่อน แล้วลบ doc (cascade ลบ items)
-    for(const it of (tx.items||[])){
-      const eq = equipments.find(e=>e.code===it.code);
-      if(eq) await sb.from('materials').update({current_stock: eq.qty + it.qty}).eq('id', eq.id);
-    }
-    const { error } = await sb.from('issuing_documents').delete().eq('id', id);
-    if(error){ toast('ลบไม่สำเร็จ','error'); return; }
-    await loadAll();
-  } else {
-    if(tx)(tx.items||[]).forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty+=it.qty; });
-    issueTransactions = issueTransactions.filter(t=>t.id!==id);
-    renderAll();
-  }
+  // เรียก RPC เดียวที่ทำงานแบบ atomic ทั้งคืนสต๊อกและลบเอกสารในทรานแซกชันเดียวฝั่ง DB
+  const { error } = await sb.rpc('delete_issuing_document', { p_doc_id: id });
+  if(error){ toast(thaiError(error),'error'); return; }
+  await loadAll();
   toast('ลบรายการเบิกแล้ว','error');
 }
 
@@ -1523,11 +1502,11 @@ function renderIssueTxItems(){
   el.innerHTML = issueTxItems.map((item,i)=>{
     const avail = getAvailStock(item.code, editingIssueId);
     return `<div class="checkout-item">
-      <div class="tx-avatar">${item.img?`<img src="${item.img}" alt="">`:item.qty>avail?'⚠️':'📦'}</div>
+      <div class="tx-avatar">${item.img?`<img src="${escapeHtml(item.img)}" alt="">`:item.qty>avail?'⚠️':'📦'}</div>
       <div class="checkout-item-name">
-        <div style="font-weight:500;font-size:13px">${item.name}</div>
-        <div style="font-size:11px;color:var(--ig-muted)">${item.code} · ${item.unit}</div>
-        <div style="font-size:11px;color:${item.qty>avail?'var(--ig-red)':'var(--ig-blue)'}">คงเหลือ: ${avail} ${item.unit}</div>
+        <div style="font-weight:500;font-size:13px">${escapeHtml(item.name)}</div>
+        <div style="font-size:11px;color:var(--ig-muted)">${escapeHtml(item.code)} · ${escapeHtml(item.unit)}</div>
+        <div style="font-size:11px;color:${item.qty>avail?'var(--ig-red)':'var(--ig-blue)'}">คงเหลือ: ${avail} ${escapeHtml(item.unit)}</div>
       </div>
       <div class="checkout-item-qty">
         <button class="qty-btn" onclick="adjIssue(${i},-1)">−</button>
@@ -1554,7 +1533,6 @@ async function submitIssue(){
   const requester = document.getElementById('issue-requester').value.trim();
   const dept = document.getElementById('issue-dept').value.trim();
   const note = document.getElementById('issue-note').value.trim();
-  const docNum = document.getElementById('issue-doc-num').textContent;
   const editId = document.getElementById('issue-edit-id').value;
   if(!date){ toast('กรุณาเลือกวันที่','error'); return; }
   if(!requester){ toast('กรุณากรอกชื่อผู้เบิก','error'); return; }
@@ -1567,62 +1545,35 @@ async function submitIssue(){
   const btn = document.getElementById('submit-issue-btn');
   btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...'; btn.disabled = true;
 
-  if(!usingDemo){
-    try {
-      if(editId){
-        // คืนสต๊อกเก่า
-        const prev = issueTransactions.find(t=>t.id===editId);
-        if(prev) for(const it of (prev.items||[])){
-          const eq = equipments.find(e=>e.code===it.code);
-          if(eq) await sb.from('materials').update({current_stock: eq.qty + it.qty}).eq('id', eq.id);
-        }
-        // อัปเดต doc
-        await sb.from('issuing_documents').update({doc_number:docNum,date,requester_name:requester,department:dept,note}).eq('id',editId);
-        await sb.from('issuing_items').delete().eq('doc_id', editId);
-        // ตัดสต๊อกใหม่และ insert items
-        for(const it of issueTxItems){
-          const eq = equipments.find(e=>e.code===it.code);
-          const matId = eq?.id;
-          await sb.from('issuing_items').insert({doc_id:editId, material_id:matId, quantity:it.qty});
-          if(eq) await sb.from('materials').update({current_stock: Math.max(0, (eq.qty||0) - it.qty)}).eq('id', eq.id);
-        }
-      } else {
-        const { data: doc, error: docErr } = await sb.from('issuing_documents').insert({doc_number:docNum,date,requester_name:requester,department:dept,note,warehouse_id:currentWarehouse}).select().single();
-        if(docErr) throw docErr;
-        for(const it of issueTxItems){
-          const eq = equipments.find(e=>e.code===it.code);
-          const matId = eq?.id;
-          await sb.from('issuing_items').insert({doc_id:doc.id, material_id:matId, quantity:it.qty});
-          if(eq) await sb.from('materials').update({current_stock: Math.max(0, (eq.qty||0) - it.qty)}).eq('id', eq.id);
-        }
-      }
-      // อัปเดต local state แทน loadAll() เพื่อความเร็ว
-      issueTxItems.forEach(it=>{
-        const eq = equipments.find(e=>e.code===it.code);
-        if(eq) eq.qty = Math.max(0,(eq.qty||0)-it.qty);
-      });
-      if(editId){
-        const idx = issueTransactions.findIndex(t=>t.id===editId);
-        if(idx>-1) issueTransactions[idx] = {...issueTransactions[idx], docNum,date,requester,dept,note,items:issueTxItems.map(i=>({...i}))};
-      } else {
-        issueTransactions.unshift({id:'pending',docNum,date,requester,dept,note,items:issueTxItems.map(i=>({...i}))});
-      }
-      renderAll();
-      // sync จาก server เบื้องหลัง
-      loadAll().catch(()=>{});
-      toast('บันทึกการเบิกสำเร็จ ✓','success');
-    } catch(e){ toast(thaiError(e),'error'); }
-  } else {
-    const payload = {id:editId||('tmp_'+Date.now()),docNum,date,requester,dept,note,items:issueTxItems.map(i=>({...i}))};
+  // เตรียมรายการเป็น material_id/quantity สำหรับส่งให้ DB function ตัดสต๊อกแบบ atomic
+  const itemsPayload = issueTxItems.map(it=>{
+    const eq = equipments.find(e=>e.code===it.code);
+    return { material_id: eq?.id, quantity: it.qty };
+  });
+
+  try {
     if(editId){
-      const prev = issueTransactions.find(t=>t.id===editId);
-      if(prev)(prev.items||[]).forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty+=it.qty; });
-      issueTransactions = issueTransactions.filter(t=>t.id!==editId);
+      const docNum = document.getElementById('issue-doc-num').textContent;
+      const { error } = await sb.rpc('update_issuing_document', {
+        p_doc_id: editId, p_doc_number: docNum, p_date: date,
+        p_requester: requester, p_department: dept, p_note: note, p_items: itemsPayload
+      });
+      if(error) throw error;
+    } else {
+      // ให้ DB จองเลขที่เอกสารแบบ atomic ตอนบันทึกจริง กันเลขซ้ำเมื่อมีคนบันทึกพร้อมกัน
+      const { data: docNum, error: numErr } = await sb.rpc('next_doc_number', { p_warehouse_id: currentWarehouse, p_prefix: 'IS' });
+      if(numErr) throw numErr;
+      document.getElementById('issue-doc-num').textContent = docNum;
+      const { error } = await sb.rpc('create_issuing_document', {
+        p_warehouse_id: currentWarehouse, p_doc_number: docNum, p_date: date,
+        p_requester: requester, p_department: dept, p_note: note, p_items: itemsPayload
+      });
+      if(error) throw error;
     }
-    issueTransactions.push(payload);
-    payload.items.forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty=Math.max(0,eq.qty-it.qty); });
-    renderAll();
+    await loadAll();
     toast('บันทึกการเบิกสำเร็จ ✓','success');
+  } catch(e){
+    toast(thaiError(e),'error');
   }
   closeModal('modal-create-issue');
   btn.innerHTML = 'บันทึกการเบิก'; btn.disabled = false;
@@ -1635,12 +1586,12 @@ function renderReceiveList(){
   if(!sorted.length){ wrap.innerHTML=`<div class="empty-state"><div class="empty-icon">📥</div><div class="empty-text">ยังไม่มีรายการรับเข้า</div></div>`; return; }
   wrap.innerHTML = `<div class="card"><div style="padding:0">${sorted.map(tx=>{
     const total = (tx.items||[]).reduce((s,i)=>s+(i.qty||0),0);
-    const summary = (tx.items||[]).map(i=>`${i.name} ×${i.qty}`).join(', ');
+    const summary = (tx.items||[]).map(i=>`${escapeHtml(i.name)} ×${i.qty}`).join(', ');
     return `<div class="tx-item">
       <div class="tx-avatar" style="background:linear-gradient(135deg,#eafaf0,#c3f0d0)">📥</div>
       <div class="tx-info" onclick="viewDoc('receive','${tx.id}')">
-        <div class="tx-name">${tx.docNum}</div>
-        <div class="tx-sub">${fmtDate(tx.date)}${tx.note?' · '+tx.note:''}</div>
+        <div class="tx-name">${escapeHtml(tx.docNum)}</div>
+        <div class="tx-sub">${fmtDate(tx.date)}${tx.note?' · '+escapeHtml(tx.note):''}</div>
         <div class="tx-sub">${summary}</div>
         <div class="tx-actions">
           <button class="btn btn-sm btn-outline" style="padding:3px 10px" onclick="event.stopPropagation();editReceive('${tx.id}')">✏️ แก้ไข</button>
@@ -1676,20 +1627,9 @@ function editReceive(id){
 
 async function deleteReceive(id){
   if(!confirm('ลบรายการรับเข้านี้?\n(สต๊อกจะถูกปรับลด)')) return;
-  const tx = receiveTransactions.find(t=>t.id===id);
-  if(!usingDemo && tx){
-    for(const it of (tx.items||[])){
-      const eq = equipments.find(e=>e.code===it.code);
-      if(eq) await sb.from('materials').update({current_stock: Math.max(0, eq.qty - it.qty)}).eq('id', eq.id);
-    }
-    const { error } = await sb.from('receiving_documents').delete().eq('id', id);
-    if(error){ toast('ลบไม่สำเร็จ','error'); return; }
-    await loadAll();
-  } else {
-    if(tx)(tx.items||[]).forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty=Math.max(0,eq.qty-it.qty); });
-    receiveTransactions = receiveTransactions.filter(t=>t.id!==id);
-    renderAll();
-  }
+  const { error } = await sb.rpc('delete_receiving_document', { p_doc_id: id });
+  if(error){ toast(thaiError(error),'error'); return; }
+  await loadAll();
   toast('ลบรายการรับเข้าแล้ว','error');
 }
 
@@ -1698,10 +1638,10 @@ function renderReceiveTxItems(){
   if(!receiveTxItems.length){ el.innerHTML=`<div class="empty-state" style="padding:20px"><div class="empty-sub">กดเลือกอุปกรณ์</div></div>`; return; }
   el.innerHTML = receiveTxItems.map((item,i)=>`
     <div class="checkout-item">
-      <div class="tx-avatar">${item.img?`<img src="${item.img}" alt="">`:''}</div>
+      <div class="tx-avatar">${item.img?`<img src="${escapeHtml(item.img)}" alt="">`:''}</div>
       <div class="checkout-item-name">
-        <div style="font-weight:500;font-size:13px">${item.name}</div>
-        <div style="font-size:11px;color:var(--ig-muted)">${item.code} · ${item.unit}</div>
+        <div style="font-weight:500;font-size:13px">${escapeHtml(item.name)}</div>
+        <div style="font-size:11px;color:var(--ig-muted)">${escapeHtml(item.code)} · ${escapeHtml(item.unit)}</div>
       </div>
       <div class="checkout-item-qty">
         <button class="qty-btn" onclick="adjReceive(${i},-1)">−</button>
@@ -1718,81 +1658,37 @@ function rmReceive(i){ receiveTxItems.splice(i,1); renderReceiveTxItems(); }
 async function submitReceive(){
   const date = document.getElementById('receive-date').value;
   const note = document.getElementById('receive-note').value.trim();
-  const docNum = document.getElementById('receive-doc-num').textContent;
   const editId = document.getElementById('receive-edit-id').value;
   if(!date){ toast('กรุณาเลือกวันที่','error'); return; }
   if(!receiveTxItems.length){ toast('กรุณาเลือกอุปกรณ์','error'); return; }
   const btn = document.getElementById('submit-receive-btn');
   btn.innerHTML = '<span class="spinner"></span> กำลังบันทึก...'; btn.disabled = true;
 
-  if(!usingDemo){
-    try {
-      if(editId){
-        // โหลด qty ปัจจุบันจาก DB ก่อนเพื่อความแม่นยำ
-        const {data: freshEq} = await sb.from('materials').select('id,code,current_stock').eq('warehouse_id',currentWarehouse);
-        const getQty = (code) => freshEq?.find(e=>e.code===code)?.current_stock || 0;
-        const getId  = (code) => freshEq?.find(e=>e.code===code)?.id;
+  const itemsPayload = receiveTxItems.map(it=>{
+    const eq = equipments.find(e=>e.code===it.code);
+    return { material_id: eq?.id, quantity: it.qty };
+  });
 
-        // หักของเก่าออก
-        const prev = receiveTransactions.find(t=>t.id===editId);
-        if(prev) for(const it of (prev.items||[])){
-          const newQty = Math.max(0, getQty(it.code) - it.qty);
-          const id = getId(it.code);
-          if(id) await sb.from('materials').update({current_stock: newQty}).eq('id', id);
-          // อัปเดต freshEq ด้วยเพื่อ chain ถูกต้อง
-          const fe = freshEq?.find(e=>e.code===it.code); if(fe) fe.current_stock = newQty;
-        }
-        await sb.from('receiving_documents').update({doc_number:docNum,date,note}).eq('id',editId);
-        await sb.from('receiving_items').delete().eq('doc_id', editId);
-        for(const it of receiveTxItems){
-          const eq = equipments.find(e=>e.code===it.code);
-          await sb.from('receiving_items').insert({doc_id:editId, material_id:eq?.id, quantity:it.qty});
-          const newQty = getQty(it.code) + it.qty;
-          if(eq?.id) await sb.from('materials').update({current_stock: newQty}).eq('id', eq.id);
-          const fe = freshEq?.find(e=>e.code===it.code); if(fe) fe.current_stock = newQty;
-        }
-      } else {
-        const { data: doc, error: docErr } = await sb.from('receiving_documents').insert({doc_number:docNum,date,note,warehouse_id:currentWarehouse}).select().single();
-        if(docErr) throw docErr;
-        for(const it of receiveTxItems){
-          const eq = equipments.find(e=>e.code===it.code);
-          await sb.from('receiving_items').insert({doc_id:doc.id, material_id:eq?.id, quantity:it.qty});
-          if(eq) await sb.from('materials').update({current_stock: (eq.qty||0) + it.qty}).eq('id', eq.id);
-        }
-      }
-      // อัปเดต local state อย่างถูกต้อง
-      if(editId){
-        // คืน qty ของเก่าก่อน
-        const prev = receiveTransactions.find(t=>t.id===editId);
-        if(prev)(prev.items||[]).forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty=Math.max(0,eq.qty-it.qty); });
-      }
-      // บวก qty ใหม่
-      receiveTxItems.forEach(it=>{
-        const eq = equipments.find(e=>e.code===it.code);
-        if(eq) eq.qty = (eq.qty||0) + it.qty;
-      });
-      if(editId){
-        const idx = receiveTransactions.findIndex(t=>t.id===editId);
-        if(idx>-1) receiveTransactions[idx] = {...receiveTransactions[idx], docNum,date,note,items:receiveTxItems.map(i=>({...i}))};
-      } else {
-        receiveTransactions.unshift({id:'pending',docNum,date,note,items:receiveTxItems.map(i=>({...i}))});
-      }
-      renderAll();
-      // sync จาก server เบื้องหลัง
-      loadAll().catch(()=>{});
-      toast('บันทึกการรับเข้าสำเร็จ ✓','success');
-    } catch(e){ toast(thaiError(e),'error'); }
-  } else {
-    const payload = {id:editId||('tmp_'+Date.now()),docNum,date,note,items:receiveTxItems.map(i=>({...i}))};
+  try {
     if(editId){
-      const prev = receiveTransactions.find(t=>t.id===editId);
-      if(prev)(prev.items||[]).forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty=Math.max(0,eq.qty-it.qty); });
-      receiveTransactions = receiveTransactions.filter(t=>t.id!==editId);
+      const docNum = document.getElementById('receive-doc-num').textContent;
+      const { error } = await sb.rpc('update_receiving_document', {
+        p_doc_id: editId, p_doc_number: docNum, p_date: date, p_note: note, p_items: itemsPayload
+      });
+      if(error) throw error;
+    } else {
+      const { data: docNum, error: numErr } = await sb.rpc('next_doc_number', { p_warehouse_id: currentWarehouse, p_prefix: 'RC' });
+      if(numErr) throw numErr;
+      document.getElementById('receive-doc-num').textContent = docNum;
+      const { error } = await sb.rpc('create_receiving_document', {
+        p_warehouse_id: currentWarehouse, p_doc_number: docNum, p_date: date, p_note: note, p_items: itemsPayload
+      });
+      if(error) throw error;
     }
-    receiveTransactions.push(payload);
-    payload.items.forEach(it=>{ const eq=equipments.find(e=>e.code===it.code); if(eq) eq.qty+=it.qty; });
-    renderAll();
+    await loadAll();
     toast('บันทึกการรับเข้าสำเร็จ ✓','success');
+  } catch(e){
+    toast(thaiError(e),'error');
   }
   closeModal('modal-create-receive');
   btn.innerHTML = 'บันทึกการรับเข้า'; btn.disabled = false;
@@ -1814,15 +1710,15 @@ function renderPicker(f){
   list.innerHTML = filtered.map(eq=>{
     const sel = pickerSelected[eq.code]||0;
     const codeEsc = eq.code.replace(/'/g,"\\'");
-    return `<div class="product-card ${sel>0?'selected':''}" id="pcard-${eq.code}" onclick="togglePickerCard('${codeEsc}')">
-      <div class="product-card-img">${eq.img?`<img src="${eq.img}" alt="">`:'<span style="font-size:22px">📦</span>'}</div>
+    return `<div class="product-card ${sel>0?'selected':''}" id="pcard-${escapeHtml(eq.code)}" onclick="togglePickerCard('${codeEsc}')">
+      <div class="product-card-img">${eq.img?`<img src="${escapeHtml(eq.img)}" alt="">`:'<span style="font-size:22px">📦</span>'}</div>
       <div class="product-card-info">
-        <div class="product-card-name">${eq.name}</div>
-        <div class="product-card-code">${eq.code} · คงเหลือ: ${eq.qty} ${eq.unit}</div>
+        <div class="product-card-name">${escapeHtml(eq.name)}</div>
+        <div class="product-card-code">${escapeHtml(eq.code)} · คงเหลือ: ${eq.qty} ${escapeHtml(eq.unit)}</div>
       </div>
       <div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:4px">
         <button class="qty-btn" onclick="adjPicker('${codeEsc}',-1)">−</button>
-        <input type="number" min="0" id="pinput-${eq.code}" value="${sel}"
+        <input type="number" min="0" id="pinput-${escapeHtml(eq.code)}" value="${sel}"
           style="width:48px;text-align:center;border:1.5px solid var(--ig-border);border-radius:6px;padding:3px 4px;font-size:14px;font-weight:500;font-family:inherit"
           onclick="event.stopPropagation()" oninput="setPicker('${codeEsc}',this.value)" onblur="cleanPicker('${codeEsc}',this)">
         <button class="qty-btn" onclick="adjPicker('${codeEsc}',1)">+</button>
@@ -1857,16 +1753,16 @@ function viewDoc(type, id){
   const total = (tx.items||[]).reduce((s,i)=>s+(i.qty||0),0);
   document.getElementById('doc-detail-body').innerHTML = `
     <table class="detail-table" style="margin-bottom:14px">
-      <tr><td style="color:var(--ig-muted);width:90px">เลขที่</td><td style="font-weight:600;color:var(--ig-blue)">${tx.docNum}</td></tr>
+      <tr><td style="color:var(--ig-muted);width:90px">เลขที่</td><td style="font-weight:600;color:var(--ig-blue)">${escapeHtml(tx.docNum)}</td></tr>
       <tr><td style="color:var(--ig-muted)">วันที่</td><td>${fmtDate(tx.date)}</td></tr>
-      ${type==='issue'?`<tr><td style="color:var(--ig-muted)">ผู้เบิก</td><td>${tx.requester}</td></tr><tr><td style="color:var(--ig-muted)">หน่วยงาน</td><td>${tx.dept||'-'}</td></tr>`:''}
-      <tr><td style="color:var(--ig-muted)">หมายเหตุ</td><td>${tx.note||'-'}</td></tr>
+      ${type==='issue'?`<tr><td style="color:var(--ig-muted)">ผู้เบิก</td><td>${escapeHtml(tx.requester)}</td></tr><tr><td style="color:var(--ig-muted)">หน่วยงาน</td><td>${escapeHtml(tx.dept||'-')}</td></tr>`:''}
+      <tr><td style="color:var(--ig-muted)">หมายเหตุ</td><td>${escapeHtml(tx.note||'-')}</td></tr>
     </table>
     <div style="font-size:12px;font-weight:600;color:var(--ig-muted);margin-bottom:10px">รายการ</div>
     ${(tx.items||[]).map(it=>{ const eq=equipments.find(e=>e.code===it.code);
       return `<div class="checkout-item">
-        <div class="tx-avatar">${eq?.img?`<img src="${eq.img}" alt="">`:type==='issue'?'📤':'📥'}</div>
-        <div style="flex:1"><div style="font-size:13px;font-weight:500">${it.name}</div><div style="font-size:11px;color:var(--ig-muted)">${it.code} · ${it.unit}</div></div>
+        <div class="tx-avatar">${eq?.img?`<img src="${escapeHtml(eq.img)}" alt="">`:type==='issue'?'📤':'📥'}</div>
+        <div style="flex:1"><div style="font-size:13px;font-weight:500">${escapeHtml(it.name)}</div><div style="font-size:11px;color:var(--ig-muted)">${escapeHtml(it.code)} · ${escapeHtml(it.unit)}</div></div>
         <div class="tx-qty ${type==='issue'?'out':'in'}">${type==='issue'?'-':'+'}${it.qty}</div>
       </div>`;
     }).join('')}
@@ -1909,17 +1805,17 @@ function filterStock(type, btn){
     const isLow = eq.qty<=eq.minQty;
     const pct = eq.minQty>0 ? Math.min(100,(eq.qty/(eq.minQty*3))*100) : Math.min(100,eq.qty);
     return `<div class="stock-card">
-      <div class="stock-card-img">${eq.img?`<img src="${eq.img}" alt="">`:'<span style="font-size:24px">📦</span>'}</div>
+      <div class="stock-card-img">${eq.img?`<img src="${escapeHtml(eq.img)}" alt="">`:'<span style="font-size:24px">📦</span>'}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-          <span style="font-weight:500;font-size:14px">${eq.name}</span>
+          <span style="font-weight:500;font-size:14px">${escapeHtml(eq.name)}</span>
           ${eq.qty===0?'<span class="badge badge-danger" style="font-size:10px;background:#b91c1c;color:#fff">🚫 หมด</span>':isLow?'<span class="badge" style="font-size:10px;background:#fef3c7;color:#92400e">⚠️ ใกล้หมด</span>':''}
         </div>
-        <div style="font-size:11px;color:var(--ig-muted);margin-bottom:5px">${eq.code}</div>
+        <div style="font-size:11px;color:var(--ig-muted);margin-bottom:5px">${escapeHtml(eq.code)}</div>
         <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${isLow?'var(--ig-red)':'var(--ig-green)'}"></div></div>
         <div style="display:flex;justify-content:space-between;font-size:11px">
-          <span style="color:var(--ig-muted)">ขั้นต่ำ: ${eq.minQty} ${eq.unit}</span>
-          <span style="font-weight:700;font-size:14px;color:${isLow?'var(--ig-red)':'var(--ig-text)'}">${eq.qty} ${eq.unit}</span>
+          <span style="color:var(--ig-muted)">ขั้นต่ำ: ${eq.minQty} ${escapeHtml(eq.unit)}</span>
+          <span style="font-weight:700;font-size:14px;color:${isLow?'var(--ig-red)':'var(--ig-text)'}">${eq.qty} ${escapeHtml(eq.unit)}</span>
         </div>
       </div>
     </div>`;
@@ -1953,9 +1849,9 @@ function renderIssueReport(){
       <div class="tx-item">
         <div class="tx-avatar" style="font-size:16px">📤</div>
         <div class="tx-info">
-          <div class="tx-name">${tx.requester||'-'} <span style="color:var(--ig-muted);font-size:11px">${tx.dept||''}</span></div>
-          <div class="tx-sub">${tx.docNum} · ${fmtDate(tx.date)}</div>
-          <div class="tx-sub">${(tx.items||[]).map(i=>`${i.name} ×${i.qty}`).join(', ')}</div>
+          <div class="tx-name">${escapeHtml(tx.requester||'-')} <span style="color:var(--ig-muted);font-size:11px">${escapeHtml(tx.dept||'')}</span></div>
+          <div class="tx-sub">${escapeHtml(tx.docNum)} · ${fmtDate(tx.date)}</div>
+          <div class="tx-sub">${(tx.items||[]).map(i=>`${escapeHtml(i.name)} ×${i.qty}`).join(', ')}</div>
         </div>
         <div class="tx-amount"><div class="tx-qty out">-${(tx.items||[]).reduce((s,i)=>s+(i.qty||0),0)}</div><div class="tx-date">ชิ้น</div></div>
       </div>`).join('');
@@ -1978,9 +1874,9 @@ function renderReceiveReport(){
       <div class="tx-item">
         <div class="tx-avatar" style="font-size:16px">📥</div>
         <div class="tx-info">
-          <div class="tx-name">${tx.docNum}</div>
-          <div class="tx-sub">${fmtDate(tx.date)}${tx.note?' · '+tx.note:''}</div>
-          <div class="tx-sub">${(tx.items||[]).map(i=>`${i.name} ×${i.qty}`).join(', ')}</div>
+          <div class="tx-name">${escapeHtml(tx.docNum)}</div>
+          <div class="tx-sub">${fmtDate(tx.date)}${tx.note?' · '+escapeHtml(tx.note):''}</div>
+          <div class="tx-sub">${(tx.items||[]).map(i=>`${escapeHtml(i.name)} ×${i.qty}`).join(', ')}</div>
         </div>
         <div class="tx-amount"><div class="tx-qty in">+${(tx.items||[]).reduce((s,i)=>s+(i.qty||0),0)}</div><div class="tx-date">ชิ้น</div></div>
       </div>`).join('');
@@ -2166,9 +2062,9 @@ function renderEquipReport(){
     const qtyColor = isEmpty ? '#b91c1c' : isLow ? '#d97706' : 'var(--ig-text)';
     const bg = i%2===0 ? '' : 'background:#fafafa';
     return `<tr style="border-bottom:1px solid var(--ig-border);${bg}">
-      <td style="padding:10px 12px;color:var(--ig-muted);font-size:12px">${eq.code}</td>
-      <td style="padding:10px 12px;font-weight:500">${eq.name}</td>
-      <td style="padding:10px 12px;text-align:center;color:var(--ig-muted)">${eq.unit}</td>
+      <td style="padding:10px 12px;color:var(--ig-muted);font-size:12px">${escapeHtml(eq.code)}</td>
+      <td style="padding:10px 12px;font-weight:500">${escapeHtml(eq.name)}</td>
+      <td style="padding:10px 12px;text-align:center;color:var(--ig-muted)">${escapeHtml(eq.unit)}</td>
       <td style="padding:10px 12px;text-align:center;font-weight:700;color:${qtyColor}">${eq.qty}</td>
       <td style="padding:10px 12px;text-align:center;color:var(--ig-muted)">${eq.minQty}</td>
       <td style="padding:10px 12px;text-align:center">${badge}</td>
