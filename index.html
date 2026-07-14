@@ -341,6 +341,10 @@ body{font-family:'Kanit','Sarabun',sans-serif;background:#fafafa;color:var(--ig-
       <button class="filter-chip" onclick="filterStock('low',this)">⚠️ ใกล้หมด</button>
       <button class="filter-chip" onclick="filterStock('empty',this)" style="color:#b91c1c;border-color:#fca5a5">🚫 หมด</button>
     </div>
+    <div style="position:relative;margin-bottom:12px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ig-muted)" stroke-width="2" style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="stock-search" class="form-control" placeholder="ค้นหาชื่อหรือรหัสอุปกรณ์..." style="padding-left:36px" oninput="renderStockList()">
+    </div>
     <div id="stock-list"></div>
   </div>
 
@@ -1807,10 +1811,18 @@ function manualQRInput(){
 
 // ===== STOCK REPORT =====
 function renderStockReport(){ filterStock('all', document.querySelector('#page-stock .filter-chip')); }
+let stockFilterType = 'all';
 function filterStock(type, btn){
+  stockFilterType = type;
   document.querySelectorAll('#page-stock .filter-chip').forEach(c=>c.classList.remove('active'));
   if(btn) btn.classList.add('active');
+  renderStockList();
+}
+function renderStockList(){
+  const type = stockFilterType;
+  const q = (document.getElementById('stock-search')?.value || '').trim().toLowerCase();
   let items = [...equipments];
+  if(q) items = items.filter(e => e.name.toLowerCase().includes(q) || e.code.toLowerCase().includes(q));
   if(type==='desc') items.sort((a,b)=>b.qty-a.qty);
   else if(type==='asc') items.sort((a,b)=>a.qty-b.qty);
   else if(type==='low') items = items.filter(e=>e.qty>0 && e.qty<=e.minQty);
